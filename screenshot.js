@@ -8,7 +8,7 @@ const axios = require('axios');
 const FormData = require('form-data');
 
 // --- CONSTANTEN ---
-const CALENDAR_URL = 'https://www.forexfactory.com/calendar?day=today'; // GEWIJZIGD om "vandaag" te tonen
+const CALENDAR_URL = 'https://www.forexfactory.com/calendar?day=today';
 const LOGIN_URL = 'https://www.forexfactory.com/login';
 const PROFILE_URL = 'https://www.forexfactory.com/lokoloek';
 
@@ -128,39 +128,31 @@ async function takeScreenshot() {
                     '#header', '#footer_wrapper', 'div.calendar__control.left',
                     '#adblock_whitelist_pitch', '.calendarsite__speedbump',
                     '.ff-ad', 'iframe[id^="google_ads_iframe"]', '.no-print',
-                    '.thread Índex', // Specifiek voor Forex Factory, indien aanwezig
-                    '.pagetitle', // Titels boven de content
-                    '.content_tabs', // Eventuele tabs boven content
-                    '#content > .sidebar', // Als er een rechter sidebar is binnen #content
-                    '.calendar__options', // De "Up Next, Search Events, Filter" knoppen boven de tabel
+                    '.thread Índex', '.pagetitle', '.content_tabs',
+                    '#content > .sidebar', '.calendar__options'
                 ];
                 selectorsToHideOrRemove.forEach(selector => {
-                    document.querySelectorAll(selector).forEach(el => el.style.display = 'none'); // Verberg ipv verwijder
+                    document.querySelectorAll(selector).forEach(el => el.style.display = 'none');
                 });
                 document.body.style.padding = '0px';
                 document.body.style.margin = '0px';
                 document.body.style.background = 'white';
                 
-                // Isoleer de kalender container
                 const calendarContainer = document.getElementById('flexBox_flex_calendar_mainCal');
                 if (calendarContainer) {
-                    // Verplaats de kalender container direct onder de body
-                    // en verwijder alle andere body kinderen
-                    // Dit is agressief en kan de layout breken als FF dit niet verwacht.
-                    // Een minder agressieve aanpak is hierboven (verbergen).
-                    // document.body.innerHTML = ''; // Verwijder alles
-                    // document.body.appendChild(calendarContainer); // Voeg alleen kalender toe
-                    
-                    // Stijl de kalender container voor de screenshot
                     calendarContainer.style.margin = '0';
                     calendarContainer.style.padding = '5px';
-                    calendarContainer.style.border = 'none'; // Verwijder eventuele randen van de container zelf
+                    calendarContainer.style.border = 'none';
+                    // ** ZORG DAT HET ZICHTBAAR IS **
+                    calendarContainer.style.display = 'block'; // of 'flex' als dat de originele display was
+                    calendarContainer.style.visibility = 'visible';
                 }
-                // Scroll naar de top van de pagina om zeker te zijn dat de kalender bovenaan begint
                 window.scrollTo(0,0);
             });
             console.log('Distracting elements hidden.');
-            await new Promise(resolve => setTimeout(resolve, 500));
+            // ***** BEGIN GEWIJZIGD BLOK *****
+            await new Promise(resolve => setTimeout(resolve, 1000)); // Verhoogde wachttijd
+            // ***** EINDE GEWIJZIGD BLOK *****
         } catch (evalError) {
             console.warn('Could not hide all distracting elements:', evalError.message);
         }
@@ -170,10 +162,13 @@ async function takeScreenshot() {
         const calendarContainerSelectorForScreenshot = '#flexBox_flex_calendar_mainCal';
         console.log(`Attempting to take screenshot of the calendar container: "${calendarContainerSelectorForScreenshot}"`);
         try {
-            await page.waitForSelector(calendarContainerSelectorForScreenshot, { timeout: 30000, visible: true });
-            console.log('Calendar container is ready for screenshot.');
+            // ***** BEGIN GEWIJZIGD BLOK *****
+            // VERWIJDER OF COMMENTAAR DE VOLGENDE waitForSelector
+            // await page.waitForSelector(calendarContainerSelectorForScreenshot, { timeout: 30000, visible: true });
+            // console.log('Calendar container is (still) ready for screenshot.');
+            // ***** EINDE GEWIJZIGD BLOK *****
 
-            const calendarElement = await page.$(calendarContainerSelectorForScreenshot);
+            const calendarElement = await page.$(calendarContainerSelectorForScreenshot); // Selecteer het element direct
             if (calendarElement) {
                 console.log('Calendar element found. Taking element screenshot...');
                 await calendarElement.screenshot({
