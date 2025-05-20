@@ -7,24 +7,25 @@ const fs = require('fs');
 const axios = require('axios');
 const FormData = require('form-data');
 
-// --- NIEUWE CONSTANTEN VOOR LOGIN ---
-const CALENDAR_URL = 'https://www.forexfactory.com/calendar'; // Was FOREX_FACTORY_URL
+// --- CONSTANTEN ---
+const CALENDAR_URL = 'https://www.forexfactory.com/calendar';
 const LOGIN_URL = 'https://www.forexfactory.com/login';
+const PROFILE_URL = 'https://www.forexfactory.com/lokoloek'; // JOUW PROFIELPAGINA
 
 const USERNAME_SELECTOR = '#login_username';
 const PASSWORD_SELECTOR = '#login_password';
 const LOGIN_BUTTON_SELECTOR = 'input[type="submit"].button';
-const LOGIN_SUCCESS_SELECTOR = 'a.logout'; // Gebaseerd op jouw screenshot van de logout knop
+const LOGIN_SUCCESS_SELECTOR = 'a.logout'; // Gebaseerd op de logout knop op je profielpagina
 
 const SCREENSHOT_PATH = 'forex_calendar.png';
-const DEBUG_SCREENSHOT_PATH = 'debug_screenshot.png';
-const LOGIN_FAILED_SCREENSHOT_PATH = 'login_failed_debug.png';
-const ERROR_SCREENSHOT_PATH = 'error_screenshot.png';
+const DEBUG_SCREENSHOT_PATH = 'debug_screenshot.png'; // Voor debug na login, voor kalender
+const LOGIN_FAILED_SCREENSHOT_PATH = 'login_failed_debug.png'; // Als login verificatie faalt
+const ERROR_SCREENSHOT_PATH = 'error_screenshot.png'; // Algemene error
 
 const DISCORD_WEBHOOK_URL = process.env.DISCORD_WEBHOOK_URL;
 const FOREX_USER = process.env.FOREX_FACTORY_USER;
 const FOREX_PASS = process.env.FOREX_FACTORY_PASS;
-// --- EINDE NIEUWE CONSTANTEN ---
+// --- EINDE CONSTANTEN ---
 
 async function takeScreenshot() {
     if (!FOREX_USER || !FOREX_PASS) {
@@ -36,7 +37,7 @@ async function takeScreenshot() {
     const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36';
 
     let browser = null;
-    let page = null; // Definieer page hier zodat het in de algemene catch beschikbaar is
+    let page = null;
 
     try {
         browser = await puppeteer.launch({
@@ -52,7 +53,7 @@ async function takeScreenshot() {
             ignoreDefaultArgs: ['--enable-automation'],
         });
 
-        page = await browser.newPage(); // Wijs toe aan de reeds gedefinieerde page variabele
+        page = await browser.newPage();
         await page.setUserAgent(userAgent);
         await page.setViewport({ width: 1920, height: 1080 });
         await page.setExtraHTTPHeaders({'accept-language': 'en-US,en;q=0.9'});
@@ -80,13 +81,20 @@ async function takeScreenshot() {
             page.waitForNavigation({ waitUntil: 'networkidle0', timeout: 60000 })
         ]);
         
-        console.log('Login attempt submitted. Verifying login...');
+        console.log(`Landed on ${page.url()} after login click.`); // Log waar we landen
+
+        // --- NAVIGEER NAAR PROFIELPAGINA EN VERIFIEER DAAR ---
+        console.log(`Navigating to profile page: ${PROFILE_URL}`);
+        await page.goto(PROFILE_URL, { waitUntil: 'networkidle0', timeout: 60000 });
+        console.log(`Current URL is now: ${page.url()}`); // Log URL na navigatie naar profiel
+
         if (LOGIN_SUCCESS_SELECTOR) {
             try {
+                console.log(`Verifying login on profile page by waiting for selector: ${LOGIN_SUCCESS_SELECTOR}`);
                 await page.waitForSelector(LOGIN_SUCCESS_SELECTOR, { timeout: 30000, visible: true });
-                console.log('Login successful! (Success selector found)');
-            } catch (e) { // Dit is de catch voor waitForSelector(LOGIN_SUCCESS_SELECTOR,...)
-                console.warn(`Login success selector "${LOGIN_SUCCESS_SELECTOR}" not found. Original error: ${e.message}. Current URL: ${page.url()}`);
+                console.log('Login successful! (Success selector found on profile page)');
+            } catch (e) {
+                console.warn(`Login success selector "${LOGIN_SUCCESS_SELECTOR}" not found on profile page (${PROFILE_URL}). Original error: ${e.message}.`);
                 try {
                     console.log(`Attempting to save screenshot to ${LOGIN_FAILED_SCREENSHOT_PATH}...`);
                     await page.screenshot({ path: LOGIN_FAILED_SCREENSHOT_PATH, fullPage: true });
@@ -94,26 +102,27 @@ async function takeScreenshot() {
                 } catch (screenshotError) {
                     console.error(`FAILED to save ${LOGIN_FAILED_SCREENSHOT_PATH}. Screenshot error: ${screenshotError.message}`);
                 }
-                throw new Error(`Failed to verify login success (selector "${LOGIN_SUCCESS_SELECTOR}" not found). Original waitForSelector error: ${e.message}`);
+                throw new Error(`Failed to verify login on profile page (selector "${LOGIN_SUCCESS_SELECTOR}" not found). Original waitForSelector error: ${e.message}`);
             }
         } else {
-            console.log('No login success selector provided, assuming login worked if no immediate error. Waiting a bit...');
+            console.log('No login success selector provided, assuming login worked based on navigation to profile page.');
             await new Promise(resolve => setTimeout(resolve, 3000));
         }
-        // --- EINDE LOGIN STAP ---
+        // --- EINDE PROFIELPAGINA VERIFICATIE ---
 
         console.log(`Navigating to calendar page: ${CALENDAR_URL}...`);
         await page.goto(CALENDAR_URL, { waitUntil: 'networkidle0', timeout: 90000 });
+        console.log(`Current URL is now: ${page.url()}`); // Log URL na navigatie naar kalender
 
-        console.log('Calendar page loaded (after login). Checking for main content...');
+        console.log('Calendar page loaded. Checking for main content...');
         const mainCalendarContentSelector = '#flexBox_flex_calendar_mainCal';
 
         try {
             console.log(`Waiting for selector "${mainCalendarContentSelector}" to appear...`);
             await page.waitForSelector(mainCalendarContentSelector, { timeout: 60000, visible: true });
             console.log('Main calendar content loaded. Proceeding to screenshot.');
-        } catch (error) { // Dit is de catch voor waitForSelector(mainCalendarContentSelector,...)
-            console.error(`Timeout or error waiting for calendar selector "${mainCalendarContentSelector}" AFTER LOGIN. Original error: ${error.message}. Current URL: ${page.url()}`);
+        } catch (error) {
+            console.error(`Timeout or error waiting for calendar selector "${mainCalendarContentSelector}" on page ${page.url()}. Original error: ${error.message}.`);
             try {
                 console.log(`Attempting to save screenshot to ${DEBUG_SCREENSHOT_PATH}...`);
                 await page.screenshot({ path: DEBUG_SCREENSHOT_PATH, fullPage: true });
@@ -121,7 +130,7 @@ async function takeScreenshot() {
             } catch (screenshotError) {
                 console.error(`FAILED to save ${DEBUG_SCREENSHOT_PATH}. Screenshot error: ${screenshotError.message}`);
             }
-            throw error; // Hergooi de originele error
+            throw error;
         }
 
         console.log('Taking screenshot of the calendar page...');
@@ -131,14 +140,12 @@ async function takeScreenshot() {
 
         console.log(`Screenshot saved to ${SCREENSHOT_PATH}`);
 
-    } catch (error) { // Algemene catch voor takeScreenshot
-        console.error('General error during screenshot process:', error.message); // Aangepaste log
-        // Probeer een algemene error screenshot te maken als page bestaat en open is
-        // en als er nog geen specifieke debug screenshots zijn gemaakt
+    } catch (error) {
+        console.error('General error during screenshot process:', error.message);
         if (page && !page.isClosed() &&
             !fs.existsSync(DEBUG_SCREENSHOT_PATH) &&
             !fs.existsSync(LOGIN_FAILED_SCREENSHOT_PATH) &&
-            !fs.existsSync(SCREENSHOT_PATH)) { // Alleen als er nog geen andere is
+            !fs.existsSync(SCREENSHOT_PATH)) {
             try {
                 console.log(`Attempting to save general error screenshot to ${ERROR_SCREENSHOT_PATH}...`);
                 await page.screenshot({ path: ERROR_SCREENSHOT_PATH, fullPage: true });
