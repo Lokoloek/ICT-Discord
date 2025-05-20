@@ -143,45 +143,37 @@ async function takeScreenshot() {
                     calendarContainer.style.margin = '0';
                     calendarContainer.style.padding = '5px';
                     calendarContainer.style.border = 'none';
-                    // ** ZORG DAT HET ZICHTBAAR IS **
-                    calendarContainer.style.display = 'block'; // of 'flex' als dat de originele display was
+                    calendarContainer.style.display = 'block';
                     calendarContainer.style.visibility = 'visible';
                 }
                 window.scrollTo(0,0);
             });
             console.log('Distracting elements hidden.');
-            // ***** BEGIN GEWIJZIGD BLOK *****
-            await new Promise(resolve => setTimeout(resolve, 1000)); // Verhoogde wachttijd
-            // ***** EINDE GEWIJZIGD BLOK *****
+            await new Promise(resolve => setTimeout(resolve, 1000));
         } catch (evalError) {
             console.warn('Could not hide all distracting elements:', evalError.message);
         }
         // --- EINDE VERWIJDER STORENDE ELEMENTEN ---
 
-        // --- SCREENSHOT NEMEN VAN ALLEEN DE KALENDER CONTAINER ---
-        const calendarContainerSelectorForScreenshot = '#flexBox_flex_calendar_mainCal';
-        console.log(`Attempting to take screenshot of the calendar container: "${calendarContainerSelectorForScreenshot}"`);
+        // --- SCREENSHOT NEMEN VAN HET BODY ELEMENT ---
+        console.log('Attempting to take screenshot of the BODY after cleaning...');
         try {
             // ***** BEGIN GEWIJZIGD BLOK *****
-            // VERWIJDER OF COMMENTAAR DE VOLGENDE waitForSelector
-            // await page.waitForSelector(calendarContainerSelectorForScreenshot, { timeout: 30000, visible: true });
-            // console.log('Calendar container is (still) ready for screenshot.');
-            // ***** EINDE GEWIJZIGD BLOK *****
-
-            const calendarElement = await page.$(calendarContainerSelectorForScreenshot); // Selecteer het element direct
-            if (calendarElement) {
-                console.log('Calendar element found. Taking element screenshot...');
-                await calendarElement.screenshot({
+            const bodyElement = await page.$('body'); // Selecteer het body element
+            if (bodyElement) {
+                console.log('Body element found. Taking element screenshot of body...');
+                await bodyElement.screenshot({
                     path: SCREENSHOT_PATH
                 });
-                console.log(`Element screenshot saved to ${SCREENSHOT_PATH}`);
+                console.log(`Element screenshot of body saved to ${SCREENSHOT_PATH}`);
             } else {
-                console.error(`Calendar element "${calendarContainerSelectorForScreenshot}" not found for screenshot. Taking full page debug screenshot instead.`);
+                console.error('Body element not found for screenshot. Taking full page debug screenshot instead.');
                 await page.screenshot({ path: DEBUG_SCREENSHOT_PATH, fullPage: true });
-                throw new Error(`Could not find element ${calendarContainerSelectorForScreenshot} to screenshot.`);
+                throw new Error('Could not find body element to screenshot.');
             }
+            // ***** EINDE GEWIJZIGD BLOK *****
         } catch (screenshotError) {
-            console.error(`Error taking element screenshot of "${calendarContainerSelectorForScreenshot}": ${screenshotError.message}`);
+            console.error(`Error taking element screenshot of body: ${screenshotError.message}`);
             if (!fs.existsSync(DEBUG_SCREENSHOT_PATH) && page && !page.isClosed()) {
                  await page.screenshot({ path: DEBUG_SCREENSHOT_PATH, fullPage: true });
             }
