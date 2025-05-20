@@ -47,7 +47,7 @@ async function takeScreenshot() {
                 '--window-position=0,0', '--ignore-certificate-errors',
                 '--ignore-certificate-errors-spki-list', `--user-agent=${userAgent}`,
                 '--disable-dev-shm-usage', '--disable-accelerated-2d-canvas',
-                '--disable-gpu', '--window-size=1920,1080',
+                '--disable-gpu', '--window-size=1920,1080', // Aangepaste viewport hoogte
                 '--lang=en-US,en;q=0.9', '--accept-language=en-US,en;q=0.9',
             ],
             ignoreDefaultArgs: ['--enable-automation'],
@@ -55,10 +55,10 @@ async function takeScreenshot() {
 
         page = await browser.newPage();
         await page.setUserAgent(userAgent);
-        await page.setViewport({ width: 1920, height: 1080 });
+        await page.setViewport({ width: 1200, height: 800 }); // Viewport die overeenkomt met de gewenste output
         await page.setExtraHTTPHeaders({'accept-language': 'en-US,en;q=0.9'});
 
-        // --- LOGIN STAP ---
+        // --- LOGIN STAP --- (Blijft hetzelfde en werkte)
         console.log(`Navigating to login page: ${LOGIN_URL}`);
         await page.goto(LOGIN_URL, { waitUntil: 'networkidle0', timeout: 60000 });
         console.log('Waiting for login form elements...');
@@ -120,60 +120,88 @@ async function takeScreenshot() {
             throw error;
         }
 
-        // --- VERWIJDER STORENDE ELEMENTEN ---
+        // --- VERWIJDER STORENDE ELEMENTEN (AGRESSIEVER) ---
         try {
-            console.log('Attempting to remove/hide distracting elements for a cleaner screenshot...');
+            console.log('Attempting to REMOVE distracting elements for a cleaner screenshot...');
             await page.evaluate(() => {
-                const selectorsToHideOrRemove = [
-                    '#header', '#footer_wrapper', 'div.calendar__control.left',
-                    '#adblock_whitelist_pitch', '.calendarsite__speedbump',
-                    '.ff-ad', 'iframe[id^="google_ads_iframe"]', '.no-print',
-                    '.thread Índex', '.pagetitle', '.content_tabs',
-                    '#content > .sidebar', '.calendar__options'
+                const selectorsToRemove = [
+                    '#header',                  // Site header
+                    '#footer_wrapper',          // Site footer
+                    'div.calendar__control.left',// Linker navigatiekolom
+                    '.calendar__options',       // Filter/zoekbalk BOVEN de tabel
+                    '#flexBox_flex_calendar_mainCal > div.head', // "Date, Time, Currency..." header IN de mainCal (als je die weg wilt)
+                    '#flexBox_flex_calendar_mainCal > div.options.sidebyside', // "Up Next, Search..." balk IN de mainCal (als je die weg wilt)
+                    '.calendar__status',        // "Top of Page, Default Page, Logout" ONDER de tabel
+                    'div.calendar__more',       // "↓ More" link ONDER de tabel
+                    'div.calendar__timezone',   // Timezone info ONDER de tabel
+                    '#adblock_whitelist_pitch',
+                    '.calendarsite__speedbump',
+                    '.ff-ad',
+                    'iframe[id^="google_ads_iframe"]',
+                    '.no-print',
+                    '.pagetitle',
+                    '.content_tabs',
+                    '#content > .sidebar'       // Eventuele rechter sidebar
                 ];
-                selectorsToHideOrRemove.forEach(selector => {
-                    document.querySelectorAll(selector).forEach(el => el.style.display = 'none');
+                selectorsToRemove.forEach(selector => {
+                    document.querySelectorAll(selector).forEach(el => el.remove()); // VERWIJDER ipv verberg
                 });
+                // Stijl de body en de container
                 document.body.style.padding = '0px';
                 document.body.style.margin = '0px';
                 document.body.style.background = 'white';
                 
                 const calendarContainer = document.getElementById('flexBox_flex_calendar_mainCal');
                 if (calendarContainer) {
-                    calendarContainer.style.margin = '0';
-                    calendarContainer.style.padding = '5px';
+                    calendarContainer.style.margin = '0'; // Geen extra marges
+                    calendarContainer.style.padding = '0px'; // Minimale padding
                     calendarContainer.style.border = 'none';
-                    calendarContainer.style.display = 'block';
-                    calendarContainer.style.visibility = 'visible';
+                    calendarContainer.style.boxShadow = 'none';
+                    // Zorg dat de container de volledige breedte van de body inneemt
+                    // en de body de hoogte van de container aanneemt
+                    document.body.style.width = 'auto'; 
+                    document.body.style.height = 'auto';
+                    // calendarContainer.style.width = '100%'; // Laat de container de breedte bepalen
                 }
                 window.scrollTo(0,0);
             });
-            console.log('Distracting elements hidden.');
-            await new Promise(resolve => setTimeout(resolve, 1000));
+            console.log('Distracting elements REMOVED.');
+            await new Promise(resolve => setTimeout(resolve, 1000)); // Geef DOM tijd om te settelen
         } catch (evalError) {
-            console.warn('Could not hide all distracting elements:', evalError.message);
+            console.warn('Could not remove all distracting elements:', evalError.message);
         }
         // --- EINDE VERWIJDER STORENDE ELEMENTEN ---
 
-        // --- SCREENSHOT NEMEN VAN HET BODY ELEMENT ---
-        console.log('Attempting to take screenshot of the BODY after cleaning...');
+        // --- SCREENSHOT NEMEN VAN DE KALENDER CONTAINER ---
+        const calendarContainerSelectorForScreenshot = '#flexBox_flex_calendar_mainCal';
+        console.log(`Attempting to take screenshot of the calendar container: "${calendarContainerSelectorForScreenshot}"`);
         try {
-            // ***** BEGIN GEWIJZIGD BLOK *****
-            const bodyElement = await page.$('body'); // Selecteer het body element
-            if (bodyElement) {
-                console.log('Body element found. Taking element screenshot of body...');
-                await bodyElement.screenshot({
+            const calendarElement = await page.$(calendarContainerSelectorForScreenshot);
+            if (calendarElement) {
+                console.log('Calendar element found. Taking element screenshot...');
+                // Pas de viewport aan op de grootte van het element voor een strakke screenshot
+                // Dit is optioneel en kan soms lastig zijn als het element dynamisch is.
+                // const boundingBox = await calendarElement.boundingBox();
+                // if (boundingBox && boundingBox.height > 0 && boundingBox.width > 0) {
+                //    await page.setViewport({ 
+                //        width: Math.ceil(boundingBox.width) + 20, // + kleine marge
+                //        height: Math.ceil(boundingBox.height) + 20 // + kleine marge
+                //    });
+                //    await new Promise(resolve => setTimeout(resolve, 200)); // Wacht op viewport aanpassing
+                // }
+
+                await calendarElement.screenshot({
                     path: SCREENSHOT_PATH
+                    // omitBackground: true // Kan helpen als er nog steeds ongewenste achtergrond is
                 });
-                console.log(`Element screenshot of body saved to ${SCREENSHOT_PATH}`);
+                console.log(`Element screenshot saved to ${SCREENSHOT_PATH}`);
             } else {
-                console.error('Body element not found for screenshot. Taking full page debug screenshot instead.');
+                console.error(`Calendar element "${calendarContainerSelectorForScreenshot}" not found for screenshot. Taking full page debug screenshot instead.`);
                 await page.screenshot({ path: DEBUG_SCREENSHOT_PATH, fullPage: true });
-                throw new Error('Could not find body element to screenshot.');
+                throw new Error(`Could not find element ${calendarContainerSelectorForScreenshot} to screenshot.`);
             }
-            // ***** EINDE GEWIJZIGD BLOK *****
         } catch (screenshotError) {
-            console.error(`Error taking element screenshot of body: ${screenshotError.message}`);
+            console.error(`Error taking element screenshot of "${calendarContainerSelectorForScreenshot}": ${screenshotError.message}`);
             if (!fs.existsSync(DEBUG_SCREENSHOT_PATH) && page && !page.isClosed()) {
                  await page.screenshot({ path: DEBUG_SCREENSHOT_PATH, fullPage: true });
             }
