@@ -81,12 +81,12 @@ async function takeScreenshot() {
             page.waitForNavigation({ waitUntil: 'networkidle0', timeout: 60000 })
         ]);
         
-        console.log(`Landed on ${page.url()} after login click.`); // Log waar we landen
+        console.log(`Landed on ${page.url()} after login click.`);
 
         // --- NAVIGEER NAAR PROFIELPAGINA EN VERIFIEER DAAR ---
         console.log(`Navigating to profile page: ${PROFILE_URL}`);
         await page.goto(PROFILE_URL, { waitUntil: 'networkidle0', timeout: 60000 });
-        console.log(`Current URL is now: ${page.url()}`); // Log URL na navigatie naar profiel
+        console.log(`Current URL is now: ${page.url()}`);
 
         if (LOGIN_SUCCESS_SELECTOR) {
             try {
@@ -112,15 +112,17 @@ async function takeScreenshot() {
 
         console.log(`Navigating to calendar page: ${CALENDAR_URL}...`);
         await page.goto(CALENDAR_URL, { waitUntil: 'networkidle0', timeout: 90000 });
-        console.log(`Current URL is now: ${page.url()}`); // Log URL na navigatie naar kalender
+        console.log(`Current URL is now: ${page.url()}`);
 
         console.log('Calendar page loaded. Checking for main content...');
-        const mainCalendarContentSelector = '#flexBox_flex_calendar_mainCal';
+        // ***** BEGIN GEWIJZIGD BLOK *****
+        const mainCalendarContentSelector = 'tr.calendar__row--new-day'; // Wacht op de eerste data-rij
+        // ***** EINDE GEWIJZIGD BLOK *****
 
         try {
-            console.log(`Waiting for selector "${mainCalendarContentSelector}" to appear...`);
+            console.log(`Waiting for calendar content selector "${mainCalendarContentSelector}" to appear...`);
             await page.waitForSelector(mainCalendarContentSelector, { timeout: 60000, visible: true });
-            console.log('Main calendar content loaded. Proceeding to screenshot.');
+            console.log('Main calendar content (first day row) loaded. Proceeding to screenshot.');
         } catch (error) {
             console.error(`Timeout or error waiting for calendar selector "${mainCalendarContentSelector}" on page ${page.url()}. Original error: ${error.message}.`);
             try {
@@ -133,12 +135,14 @@ async function takeScreenshot() {
             throw error;
         }
 
-        console.log('Taking screenshot of the calendar page...');
+        // Als de code hier komt, is de waitForSelector hierboven geslaagd.
+        // Nu maken we de definitieve screenshot.
+        console.log('Taking FINAL screenshot of the calendar page...');
         await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        await page.screenshot({ path: SCREENSHOT_PATH, fullPage: true });
+        await new Promise(resolve => setTimeout(resolve, 1000)); // Wacht op scroll & render
+        await page.screenshot({ path: SCREENSHOT_PATH, fullPage: true }); // Dit wordt forex_calendar.png
 
-        console.log(`Screenshot saved to ${SCREENSHOT_PATH}`);
+        console.log(`FINAL Screenshot saved to ${SCREENSHOT_PATH}`);
 
     } catch (error) {
         console.error('General error during screenshot process:', error.message);
@@ -170,28 +174,49 @@ async function sendToDiscord() {
         console.error('DISCORD_WEBHOOK_URL is not set.');
         return;
     }
-    if (!fs.existsSync(SCREENSHOT_PATH)) {
-        console.warn(`Screenshot file ${SCREENSHOT_PATH} not found. Not sending to Discord.`);
-        return;
+    // Stuur de HOOFD screenshot als die bestaat
+    if (fs.existsSync(SCREENSHOT_PATH)) {
+        console.log(`Sending ${SCREENSHOT_PATH} to Discord...`);
+        const filePath = SCREENSHOT_PATH;
+        const fileName = 'forex_calendar.png';
+        const title = `📅 **Forex Factory Calendar - ${new Date().toDateString()}**`;
+        await sendFileToDiscord(filePath, fileName, title);
+    } 
+    // Als de hoofd screenshot niet bestaat, maar de DEBUG screenshot wel (omdat de selector faalde maar de pagina wel geladen was)
+    // Stuur dan de DEBUG screenshot
+    else if (fs.existsSync(DEBUG_SCREENSHOT_PATH)) {
+        console.warn(`${SCREENSHOT_PATH} not found. Attempting to send ${DEBUG_SCREENSHOT_PATH} instead.`);
+        const filePath = DEBUG_SCREENSHOT_PATH;
+        const fileName = 'forex_calendar_debug.png';
+        const title = `⚠️ **DEBUG: Forex Factory Calendar (Selector Failed) - ${new Date().toDateString()}**`;
+        await sendFileToDiscord(filePath, fileName, title);
+    } 
+    // Als geen van beide relevante screenshots bestaan, stuur dan niets (of een error bericht)
+    else {
+        console.warn(`Neither ${SCREENSHOT_PATH} nor ${DEBUG_SCREENSHOT_PATH} found. Not sending to Discord.`);
+        // Optioneel: stuur een tekstbericht naar Discord dat de screenshot mislukt is.
+        // await sendTextToDiscord(`Failed to generate Forex Factory Calendar screenshot on ${new Date().toDateString()}.`);
     }
+}
 
-    console.log('Sending screenshot to Discord...');
+// Hulpfunctie om bestanden naar Discord te sturen (om code te hergebruiken)
+async function sendFileToDiscord(filePath, fileName, title) {
     const formData = new FormData();
-    formData.append('file1', fs.createReadStream(SCREENSHOT_PATH), {
-        filename: 'forex_calendar.png',
+    formData.append('file1', fs.createReadStream(filePath), {
+        filename: fileName,
         contentType: 'image/png',
     });
     formData.append('payload_json', JSON.stringify({
-        content: `📅 **Forex Factory Calendar - ${new Date().toDateString()}**`
+        content: title
     }));
 
     try {
         const response = await axios.post(DISCORD_WEBHOOK_URL, formData, {
             headers: formData.getHeaders(),
         });
-        console.log('Successfully sent to Discord:', response.status);
+        console.log(`Successfully sent ${fileName} to Discord:`, response.status);
     } catch (error) {
-        console.error('Error sending to Discord:');
+        console.error(`Error sending ${fileName} to Discord:`);
         if (error.response) {
             console.error('Data:', error.response.data);
             console.error('Status:', error.response.status);
@@ -204,12 +229,15 @@ async function sendToDiscord() {
     }
 }
 
+
 async function main() {
     try {
-        await takeScreenshot();
-        await sendToDiscord();
+        await takeScreenshot(); // Probeert SCREENSHOT_PATH te maken, of DEBUG_SCREENSHOT_PATH als tussenstap
+        await sendToDiscord();  // Kijkt welke screenshot beschikbaar is om te sturen
     } catch (error) {
-        console.error('Script failed:', error.message);
+        console.error('Script failed in main:', error.message); // Aangepast
+        // Overweeg om hier ook sendToDiscord aan te roepen om een eventuele debug screenshot te sturen
+        // await sendToDiscord(); // of een specifieke error melding naar Discord sturen.
         process.exit(1);
     }
 }
