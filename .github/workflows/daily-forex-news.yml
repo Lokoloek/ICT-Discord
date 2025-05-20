@@ -1,0 +1,36 @@
+name: Daily Forex Factory News
+
+on:
+  schedule:
+    # Runs at 07:00 UTC every day. Adjust as needed.
+    # Use https://crontab.guru to help with cron syntax
+    - cron: '0 7 * * *'
+  workflow_dispatch: # Allows manual triggering from the Actions tab
+
+jobs:
+  screenshot_and_send:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18' # Or '20', 'lts/*'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run screenshot script
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: node screenshot.js
+
+      # Optional: Upload screenshot as artifact for debugging
+      - name: Upload screenshot artifact
+        if: always() # Run even if previous steps fail, for debugging
+        uses: actions/upload-artifact@v4
+        with:
+          name: forex-screenshot
+          path: forex_calendar.png
