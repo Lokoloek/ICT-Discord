@@ -8,19 +8,19 @@ const axios = require('axios');
 const FormData = require('form-data');
 
 // --- CONSTANTEN ---
-const CALENDAR_URL = 'https://www.forexfactory.com/calendar';
+const CALENDAR_URL = 'https://www.forexfactory.com/calendar?day=today'; // GEWIJZIGD om "vandaag" te tonen
 const LOGIN_URL = 'https://www.forexfactory.com/login';
-const PROFILE_URL = 'https://www.forexfactory.com/lokoloek'; // JOUW PROFIELPAGINA
+const PROFILE_URL = 'https://www.forexfactory.com/lokoloek';
 
 const USERNAME_SELECTOR = '#login_username';
 const PASSWORD_SELECTOR = '#login_password';
 const LOGIN_BUTTON_SELECTOR = 'input[type="submit"].button';
-const LOGIN_SUCCESS_SELECTOR = 'a.logout'; // Gebaseerd op de logout knop op je profielpagina
+const LOGIN_SUCCESS_SELECTOR = 'a.logout';
 
 const SCREENSHOT_PATH = 'forex_calendar.png';
-const DEBUG_SCREENSHOT_PATH = 'debug_screenshot.png'; // Voor debug na login, voor kalender
-const LOGIN_FAILED_SCREENSHOT_PATH = 'login_failed_debug.png'; // Als login verificatie faalt
-const ERROR_SCREENSHOT_PATH = 'error_screenshot.png'; // Algemene error
+const DEBUG_SCREENSHOT_PATH = 'debug_screenshot.png';
+const LOGIN_FAILED_SCREENSHOT_PATH = 'login_failed_debug.png';
+const ERROR_SCREENSHOT_PATH = 'error_screenshot.png';
 
 const DISCORD_WEBHOOK_URL = process.env.DISCORD_WEBHOOK_URL;
 const FOREX_USER = process.env.FOREX_FACTORY_USER;
@@ -47,7 +47,7 @@ async function takeScreenshot() {
                 '--window-position=0,0', '--ignore-certificate-errors',
                 '--ignore-certificate-errors-spki-list', `--user-agent=${userAgent}`,
                 '--disable-dev-shm-usage', '--disable-accelerated-2d-canvas',
-                '--disable-gpu', '--window-size=1920,1080',
+                '--disable-gpu', '--window-size=1920,1080', // Breedte is belangrijk voor layout
                 '--lang=en-US,en;q=0.9', '--accept-language=en-US,en;q=0.9',
             ],
             ignoreDefaultArgs: ['--enable-automation'],
@@ -55,39 +55,32 @@ async function takeScreenshot() {
 
         page = await browser.newPage();
         await page.setUserAgent(userAgent);
-        await page.setViewport({ width: 1920, height: 1080 });
+        await page.setViewport({ width: 1920, height: 1080 }); // Viewport grootte
         await page.setExtraHTTPHeaders({'accept-language': 'en-US,en;q=0.9'});
 
         // --- LOGIN STAP ---
+        // (Dit deel blijft ongewijzigd en werkte al)
         console.log(`Navigating to login page: ${LOGIN_URL}`);
         await page.goto(LOGIN_URL, { waitUntil: 'networkidle0', timeout: 60000 });
-
         console.log('Waiting for login form elements...');
         await page.waitForSelector(USERNAME_SELECTOR, { timeout: 30000, visible: true });
         await page.waitForSelector(PASSWORD_SELECTOR, { timeout: 30000, visible: true });
         await page.waitForSelector(LOGIN_BUTTON_SELECTOR, { timeout: 30000, visible: true });
-
         console.log('Typing username...');
         await page.type(USERNAME_SELECTOR, FOREX_USER);
         await new Promise(resolve => setTimeout(resolve, 500));
-
         console.log('Typing password...');
         await page.type(PASSWORD_SELECTOR, FOREX_PASS);
         await new Promise(resolve => setTimeout(resolve, 500));
-
         console.log('Clicking login button...');
         await Promise.all([
             page.click(LOGIN_BUTTON_SELECTOR),
             page.waitForNavigation({ waitUntil: 'networkidle0', timeout: 60000 })
         ]);
-        
         console.log(`Landed on ${page.url()} after login click.`);
-
-        // --- NAVIGEER NAAR PROFIELPAGINA EN VERIFIEER DAAR ---
         console.log(`Navigating to profile page: ${PROFILE_URL}`);
         await page.goto(PROFILE_URL, { waitUntil: 'networkidle0', timeout: 60000 });
         console.log(`Current URL is now: ${page.url()}`);
-
         if (LOGIN_SUCCESS_SELECTOR) {
             try {
                 console.log(`Verifying login on profile page by waiting for selector: ${LOGIN_SUCCESS_SELECTOR}`);
@@ -108,16 +101,53 @@ async function takeScreenshot() {
             console.log('No login success selector provided, assuming login worked based on navigation to profile page.');
             await new Promise(resolve => setTimeout(resolve, 3000));
         }
-        // --- EINDE PROFIELPAGINA VERIFICATIE ---
+        // --- EINDE LOGIN STAP ---
 
-        console.log(`Navigating to calendar page: ${CALENDAR_URL}...`);
+        console.log(`Navigating to calendar page (today view): ${CALENDAR_URL}...`);
         await page.goto(CALENDAR_URL, { waitUntil: 'networkidle0', timeout: 90000 });
         console.log(`Current URL is now: ${page.url()}`);
 
-        console.log('Calendar page loaded. Checking for main content...');
-        // ***** BEGIN GEWIJZIGD BLOK *****
-        const mainCalendarContentSelector = 'tr.calendar__row--new-day'; // Wacht op de eerste data-rij
-        // ***** EINDE GEWIJZIGD BLOK *****
+        // --- VERWIJDER STORENDE ELEMENTEN ---
+        try {
+            console.log('Attempting to remove distracting elements for a cleaner screenshot...');
+            await page.evaluate(() => {
+                const selectorsToRemove = [
+                    '#header',                     // Website header
+                    '#footer_wrapper',             // Website footer
+                    'div.calendar__control.left',  // Linker navigatiekolom met datums etc.
+                    '#adblock_whitelist_pitch',    // Adblocker whitelist verzoek
+                    '.calendarsite__speedbump',    // "Are you a professional trader" popup
+                    '.ff-ad',                      // Algemene advertentie class
+                    'iframe[id^="google_ads_iframe"]', // Google advertentie iframes
+                    '.no-print'                    // Elementen die niet geprint moeten worden (soms overbodig)
+                ];
+                selectorsToRemove.forEach(selector => {
+                    document.querySelectorAll(selector).forEach(el => el.remove());
+                });
+                // Pas body stijlen aan voor minimale witruimte
+                document.body.style.padding = '0px';
+                document.body.style.margin = '0px';
+                document.body.style.background = 'white'; // Maak achtergrond wit
+                // Centreer de hoofd content als die er is
+                const mainContent = document.querySelector('#content .flexBox_flex_calendar_mainCal') || document.querySelector('#content');
+                if(mainContent && mainContent.parentElement){
+                    mainContent.parentElement.style.width = '100%'; // Zorg dat parent breed genoeg is
+                }
+                if (mainContent) {
+                    mainContent.style.margin = '0 auto'; // Centreer de kalender
+                    mainContent.style.padding = '10px'; // Kleine padding voor de kalender zelf
+                    mainContent.style.maxWidth = '1000px'; // Maximale breedte voor de kalender
+                }
+            });
+            console.log('Distracting elements removed.');
+            await new Promise(resolve => setTimeout(resolve, 500)); // Geef DOM even tijd
+        } catch (evalError) {
+            console.warn('Could not remove all distracting elements:', evalError.message);
+        }
+        // --- EINDE VERWIJDER STORENDE ELEMENTEN ---
+
+        console.log('Calendar page modified. Checking for main content data...');
+        const mainCalendarContentSelector = 'tr.calendar__row--new-day';
 
         try {
             console.log(`Waiting for calendar content selector "${mainCalendarContentSelector}" to appear...`);
@@ -135,12 +165,13 @@ async function takeScreenshot() {
             throw error;
         }
 
-        // Als de code hier komt, is de waitForSelector hierboven geslaagd.
-        // Nu maken we de definitieve screenshot.
-        console.log('Taking FINAL screenshot of the calendar page...');
-        await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-        await new Promise(resolve => setTimeout(resolve, 1000)); // Wacht op scroll & render
-        await page.screenshot({ path: SCREENSHOT_PATH, fullPage: true }); // Dit wordt forex_calendar.png
+        console.log('Taking FINAL screenshot of the cleaned calendar page...');
+        // Maak een screenshot van de hele pagina. Door elementen te verwijderen,
+        // zal dit effectief neerkomen op de kalender zelf.
+        await page.screenshot({ 
+            path: SCREENSHOT_PATH, 
+            fullPage: true 
+        });
 
         console.log(`FINAL Screenshot saved to ${SCREENSHOT_PATH}`);
 
@@ -169,37 +200,7 @@ async function takeScreenshot() {
     }
 }
 
-async function sendToDiscord() {
-    if (!DISCORD_WEBHOOK_URL) {
-        console.error('DISCORD_WEBHOOK_URL is not set.');
-        return;
-    }
-    // Stuur de HOOFD screenshot als die bestaat
-    if (fs.existsSync(SCREENSHOT_PATH)) {
-        console.log(`Sending ${SCREENSHOT_PATH} to Discord...`);
-        const filePath = SCREENSHOT_PATH;
-        const fileName = 'forex_calendar.png';
-        const title = `📅 **Forex Factory Calendar - ${new Date().toDateString()}**`;
-        await sendFileToDiscord(filePath, fileName, title);
-    } 
-    // Als de hoofd screenshot niet bestaat, maar de DEBUG screenshot wel (omdat de selector faalde maar de pagina wel geladen was)
-    // Stuur dan de DEBUG screenshot
-    else if (fs.existsSync(DEBUG_SCREENSHOT_PATH)) {
-        console.warn(`${SCREENSHOT_PATH} not found. Attempting to send ${DEBUG_SCREENSHOT_PATH} instead.`);
-        const filePath = DEBUG_SCREENSHOT_PATH;
-        const fileName = 'forex_calendar_debug.png';
-        const title = `⚠️ **DEBUG: Forex Factory Calendar (Selector Failed) - ${new Date().toDateString()}**`;
-        await sendFileToDiscord(filePath, fileName, title);
-    } 
-    // Als geen van beide relevante screenshots bestaan, stuur dan niets (of een error bericht)
-    else {
-        console.warn(`Neither ${SCREENSHOT_PATH} nor ${DEBUG_SCREENSHOT_PATH} found. Not sending to Discord.`);
-        // Optioneel: stuur een tekstbericht naar Discord dat de screenshot mislukt is.
-        // await sendTextToDiscord(`Failed to generate Forex Factory Calendar screenshot on ${new Date().toDateString()}.`);
-    }
-}
-
-// Hulpfunctie om bestanden naar Discord te sturen (om code te hergebruiken)
+// De sendToDiscord en main functies blijven hetzelfde als in de vorige versie (die DEBUG_SCREENSHOT_PATH stuurt als SCREENSHOT_PATH mist)
 async function sendFileToDiscord(filePath, fileName, title) {
     const formData = new FormData();
     formData.append('file1', fs.createReadStream(filePath), {
@@ -229,15 +230,30 @@ async function sendFileToDiscord(filePath, fileName, title) {
     }
 }
 
+async function sendToDiscord() {
+    if (!DISCORD_WEBHOOK_URL) {
+        console.error('DISCORD_WEBHOOK_URL is not set.');
+        return;
+    }
+    if (fs.existsSync(SCREENSHOT_PATH)) {
+        console.log(`Sending ${SCREENSHOT_PATH} to Discord...`);
+        await sendFileToDiscord(SCREENSHOT_PATH, 'forex_calendar.png', `📅 **Forex Factory Calendar - ${new Date().toDateString()}**`);
+    } 
+    else if (fs.existsSync(DEBUG_SCREENSHOT_PATH)) {
+        console.warn(`${SCREENSHOT_PATH} not found. Attempting to send ${DEBUG_SCREENSHOT_PATH} instead.`);
+        await sendFileToDiscord(DEBUG_SCREENSHOT_PATH, 'forex_calendar_debug.png', `⚠️ **DEBUG: Forex Factory Calendar (Selector Failed) - ${new Date().toDateString()}**`);
+    } 
+    else {
+        console.warn(`Neither ${SCREENSHOT_PATH} nor ${DEBUG_SCREENSHOT_PATH} found. Not sending to Discord.`);
+    }
+}
 
 async function main() {
     try {
-        await takeScreenshot(); // Probeert SCREENSHOT_PATH te maken, of DEBUG_SCREENSHOT_PATH als tussenstap
-        await sendToDiscord();  // Kijkt welke screenshot beschikbaar is om te sturen
+        await takeScreenshot();
+        await sendToDiscord();
     } catch (error) {
-        console.error('Script failed in main:', error.message); // Aangepast
-        // Overweeg om hier ook sendToDiscord aan te roepen om een eventuele debug screenshot te sturen
-        // await sendToDiscord(); // of een specifieke error melding naar Discord sturen.
+        console.error('Script failed in main:', error.message);
         process.exit(1);
     }
 }
