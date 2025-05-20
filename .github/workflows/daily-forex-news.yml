@@ -32,5 +32,10 @@ jobs:
         if: always() # Run even if previous steps fail, for debugging
         uses: actions/upload-artifact@v4
         with:
-          name: forex-screenshot
-          path: forex_calendar.png
+          name: forex-screenshots # Changed name to be more generic
+          path: |
+            forex_calendar.png
+            debug_screenshot.png 
+            error_screenshot.png
+          retention-days: 5 # Optional: keep artifacts for 5 days
+          if-no-files-found: warn # Don't fail if some files aren't there
