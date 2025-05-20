@@ -4,7 +4,7 @@ on:
   schedule:
     # Runs at 07:00 UTC every day. Adjust as needed.
     # Use https://crontab.guru to help with cron syntax
-    - cron: '0 7 * * *'
+    - cron: '0 7 * * *' # Pas dit aan naar jouw gewenste tijd, bv. '0 5 * * 1-5' voor 05:00 UTC op weekdagen
   workflow_dispatch: # Allows manual triggering from the Actions tab
 
 jobs:
@@ -17,7 +17,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18' # Or '20', 'lts/*'
+          node-version: '18' # Of '20', 'lts/*'
 
       - name: Install dependencies
         run: npm install
@@ -25,17 +25,20 @@ jobs:
       - name: Run screenshot script
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          FOREX_FACTORY_USER: ${{ secrets.FOREX_FACTORY_USER }}   # NIEUW TOEGEVOEGD
+          FOREX_FACTORY_PASS: ${{ secrets.FOREX_FACTORY_PASS }}   # NIEUW TOEGEVOEGD
         run: node screenshot.js
 
-      # Optional: Upload screenshot as artifact for debugging
+      # Upload all potential screenshots as artifacts for debugging
       - name: Upload screenshot artifact
         if: always() # Run even if previous steps fail, for debugging
         uses: actions/upload-artifact@v4
         with:
-          name: forex-screenshots # Changed name to be more generic
+          name: forex-screenshots # Name of the artifact bundle
           path: |
             forex_calendar.png
-            debug_screenshot.png 
+            debug_screenshot.png
+            login_failed_debug.png   # NIEUW TOEGEVOEGD
             error_screenshot.png
-          retention-days: 5 # Optional: keep artifacts for 5 days
-          if-no-files-found: warn # Don't fail if some files aren't there
+          retention-days: 5 # Optional: keep artifacts for X days
+          if-no-files-found: warn # Don't fail the workflow if one of these optional files isn't found
