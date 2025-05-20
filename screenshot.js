@@ -5,64 +5,71 @@ const FormData = require('form-data');
 
 const FOREX_FACTORY_URL = 'https://www.forexfactory.com/calendar';
 const SCREENSHOT_PATH = 'forex_calendar.png';
-const DISCORD_WEBHOOK_URL = process.env.DISCORD_WEBHOOK_URL; // Get from environment variable
+const DEBUG_SCREENSHOT_PATH = 'debug_screenshot.png'; // For debugging Cloudflare issues
+const DISCORD_WEBHOOK_URL = process.env.DISCORD_WEBHOOK_URL;
 
 async function takeScreenshot() {
     console.log('Launching browser...');
     const browser = await puppeteer.launch({
-        headless: true, // 'new' for newer versions, true for older
+        headless: true, // 'new' for newer versions
         args: [
             '--no-sandbox',
             '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage', // Important for running in CI environments
-            '--window-size=1600,1200' // Adjust viewport for better screenshot
+            '--disable-dev-shm-usage',
+            '--window-size=1600,1200'
         ]
     });
     const page = await browser.newPage();
+    // Optional: Set a common user agent to look more like a real browser
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.93 Safari/537.36');
+
 
     try {
         console.log(`Navigating to ${FOREX_FACTORY_URL}...`);
-        await page.goto(FOREX_FACTORY_URL, { waitUntil: 'networkidle0', timeout: 60000 });
+        // Initial navigation with a generous timeout for the first load
+        await page.goto(FOREX_FACTORY_URL, { waitUntil: 'networkidle0', timeout: 90000 });
 
-        // --- Optional: Handle Cookie Banner (if present) ---
-        // Inspect ForexFactory for the cookie banner's selector if it exists and uncomment/adjust.
-        // Example:
-        // const cookieBannerSelector = '#cookie-banner-accept-button'; // Fictional selector
-        // try {
-        //     await page.waitForSelector(cookieBannerSelector, { timeout: 5000 });
-        //     await page.click(cookieBannerSelector);
-        //     console.log('Clicked cookie banner.');
-        //     await page.waitForTimeout(1000); // Wait a bit for it to disappear
-        // } catch (error) {
-        //     console.log('Cookie banner not found or already accepted.');
-        // }
-        // --- End Optional Cookie Banner ---
+        console.log('Initial page load complete. Checking for Cloudflare / waiting for main content...');
+        // Selector for an element that should ONLY exist on the actual calendar page,
+        // NOT on the Cloudflare interstitial page.
+        // This is the ID of the main div wrapping the calendar content on Forex Factory.
+        const mainCalendarContentSelector = '#flexBox_flex_calendar_mainCal';
 
-        // --- Optional: Target a specific element ---
-        // If you want to screenshot only the calendar table, inspect its selector.
-        // Example:
-        // const calendarElement = await page.$('#calendar'); // Fictional selector for the calendar div/table
-        // if (calendarElement) {
-        //     console.log('Taking screenshot of the calendar element...');
-        //     await calendarElement.screenshot({ path: SCREENSHOT_PATH });
-        // } else {
-        //     console.log('Calendar element not found, taking full page screenshot.');
-        //     await page.screenshot({ path: SCREENSHOT_PATH, fullPage: true });
-        // }
-        // --- End Optional Target Element ---
+        try {
+            console.log(`Waiting for selector "${mainCalendarContentSelector}" to appear...`);
+            await page.waitForSelector(mainCalendarContentSelector, { timeout: 60000 }); // Wait up to 60 seconds
+            console.log('Main calendar content loaded. Proceeding to screenshot.');
+        } catch (error) {
+            console.error(`Timeout or error waiting for selector "${mainCalendarContentSelector}". It's possible Cloudflare blocked access or the page structure changed.`);
+            console.log('Taking a debug screenshot of the current page...');
+            await page.screenshot({ path: DEBUG_SCREENSHOT_PATH, fullPage: true });
+            console.log(`Debug screenshot saved to ${DEBUG_SCREENSHOT_PATH}. Check workflow artifacts.`);
+            throw error; // Re-throw to fail the job and indicate the issue
+        }
 
-        // For now, let's take a full page screenshot or a viewport screenshot
-        console.log('Taking screenshot...');
+        // --- Optional: Handle Cookie Banner (if present AFTER Cloudflare) ---
+        // ... (your cookie banner logic if needed)
+
+        console.log('Taking screenshot of the calendar page...');
         // Ensure the page has some height before fullPage screenshot
         await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
         await page.waitForTimeout(1000); // Give it a moment to render everything scrolled
-        await page.screenshot({ path: SCREENSHOT_PATH, fullPage: true }); // Or just { path: SCREENSHOT_PATH } for viewport
+        await page.screenshot({ path: SCREENSHOT_PATH, fullPage: true });
 
         console.log(`Screenshot saved to ${SCREENSHOT_PATH}`);
 
     } catch (error) {
         console.error('Error during screenshot process:', error);
-        throw error; // Re-throw to fail the GitHub Action
+        // If a debug screenshot wasn't already taken, take one now
+        if (!fs.existsSync(DEBUG_SCREENSHOT_PATH) && !fs.existsSync(SCREENSHOT_PATH)) {
+            try {
+                await page.screenshot({ path: 'error_screenshot.png', fullPage: true });
+                console.log('Error screenshot saved as error_screenshot.png');
+            } catch (ssError) {
+                console.error('Could not take error screenshot:', ssError);
+            }
+        }
+        throw error;
     } finally {
         await browser.close();
         console.log('Browser closed.');
@@ -70,6 +77,7 @@ async function takeScreenshot() {
 }
 
 async function sendToDiscord() {
+    // ... (your sendToDiscord function remains the same) ...
     if (!DISCORD_WEBHOOK_URL) {
         console.error('DISCORD_WEBHOOK_URL is not set.');
         return;
@@ -105,7 +113,7 @@ async function sendToDiscord() {
         } else {
             console.error('Error Message:', error.message);
         }
-        throw error; // Re-throw
+        throw error;
     }
 }
 
@@ -115,7 +123,7 @@ async function main() {
         await sendToDiscord();
     } catch (error) {
         console.error('Script failed:', error.message);
-        process.exit(1); // Exit with error code to fail GitHub Action
+        process.exit(1);
     }
 }
 
