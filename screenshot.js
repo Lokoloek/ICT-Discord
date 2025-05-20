@@ -18,53 +18,44 @@ const LOGIN_SUCCESS_SELECTOR = 'a.logout'; // Gebaseerd op jouw screenshot van d
 
 const SCREENSHOT_PATH = 'forex_calendar.png';
 const DEBUG_SCREENSHOT_PATH = 'debug_screenshot.png';
-const LOGIN_FAILED_SCREENSHOT_PATH = 'login_failed_debug.png'; // Toegevoegd
-const ERROR_SCREENSHOT_PATH = 'error_screenshot.png'; // Toegevoegd
+const LOGIN_FAILED_SCREENSHOT_PATH = 'login_failed_debug.png';
+const ERROR_SCREENSHOT_PATH = 'error_screenshot.png';
 
 const DISCORD_WEBHOOK_URL = process.env.DISCORD_WEBHOOK_URL;
-const FOREX_USER = process.env.FOREX_FACTORY_USER; // Voor je username secret
-const FOREX_PASS = process.env.FOREX_FACTORY_PASS; // Voor je password secret
+const FOREX_USER = process.env.FOREX_FACTORY_USER;
+const FOREX_PASS = process.env.FOREX_FACTORY_PASS;
 // --- EINDE NIEUWE CONSTANTEN ---
 
 async function takeScreenshot() {
-    // Check of de secrets zijn ingesteld
     if (!FOREX_USER || !FOREX_PASS) {
         console.error('Forex Factory username or password not set in GitHub Secrets (FOREX_FACTORY_USER, FOREX_FACTORY_PASS).');
         throw new Error('Missing login credentials.');
     }
 
     console.log('Launching stealth browser with refined options...');
-    const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36'; // Recente user agent
+    const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36';
 
-    let browser = null; // Definieer browser hier zodat het in finally beschikbaar is
+    let browser = null;
+    let page = null; // Definieer page hier zodat het in de algemene catch beschikbaar is
 
-    try { // Verplaats de browser launch in de try zodat het in finally gesloten kan worden
-        browser = await puppeteer.launch({ // Wijs toe aan de reeds gedefinieerde browser variabele
-            headless: 'new', // 'new' headless mode, vaak beter voor stealth
+    try {
+        browser = await puppeteer.launch({
+            headless: 'new',
             args: [
-                '--no-sandbox',
-                '--disable-setuid-sandbox',
-                '--disable-infobars',
-                '--window-position=0,0',
-                '--ignore-certificate-errors',
-                '--ignore-certificate-errors-spki-list',
-                `--user-agent=${userAgent}`,
-                '--disable-dev-shm-usage',
-                '--disable-accelerated-2d-canvas',
-                '--disable-gpu',
-                '--window-size=1920,1080', // Gangbare desktopresolutie
-                '--lang=en-US,en;q=0.9',
-                '--accept-language=en-US,en;q=0.9',
+                '--no-sandbox', '--disable-setuid-sandbox', '--disable-infobars',
+                '--window-position=0,0', '--ignore-certificate-errors',
+                '--ignore-certificate-errors-spki-list', `--user-agent=${userAgent}`,
+                '--disable-dev-shm-usage', '--disable-accelerated-2d-canvas',
+                '--disable-gpu', '--window-size=1920,1080',
+                '--lang=en-US,en;q=0.9', '--accept-language=en-US,en;q=0.9',
             ],
-            ignoreDefaultArgs: ['--enable-automation'], // Belangrijk voor detectie
+            ignoreDefaultArgs: ['--enable-automation'],
         });
 
-        const page = await browser.newPage();
+        page = await browser.newPage(); // Wijs toe aan de reeds gedefinieerde page variabele
         await page.setUserAgent(userAgent);
         await page.setViewport({ width: 1920, height: 1080 });
-        await page.setExtraHTTPHeaders({
-            'accept-language': 'en-US,en;q=0.9',
-        });
+        await page.setExtraHTTPHeaders({'accept-language': 'en-US,en;q=0.9'});
 
         // --- LOGIN STAP ---
         console.log(`Navigating to login page: ${LOGIN_URL}`);
@@ -77,11 +68,11 @@ async function takeScreenshot() {
 
         console.log('Typing username...');
         await page.type(USERNAME_SELECTOR, FOREX_USER);
-        await new Promise(resolve => setTimeout(resolve, 500)); // GEWIJZIGD
+        await new Promise(resolve => setTimeout(resolve, 500));
 
         console.log('Typing password...');
         await page.type(PASSWORD_SELECTOR, FOREX_PASS);
-        await new Promise(resolve => setTimeout(resolve, 500)); // GEWIJZIGD
+        await new Promise(resolve => setTimeout(resolve, 500));
 
         console.log('Clicking login button...');
         await Promise.all([
@@ -94,15 +85,20 @@ async function takeScreenshot() {
             try {
                 await page.waitForSelector(LOGIN_SUCCESS_SELECTOR, { timeout: 30000, visible: true });
                 console.log('Login successful! (Success selector found)');
-            } catch (e) {
-                console.warn('Login success selector not found. Login might have failed or page structure changed.');
-                await page.screenshot({ path: LOGIN_FAILED_SCREENSHOT_PATH, fullPage: true });
-                console.log(`Screenshot of potentially failed login page saved to ${LOGIN_FAILED_SCREENSHOT_PATH}`);
-                throw new Error('Failed to verify login success after submitting credentials.');
+            } catch (e) { // Dit is de catch voor waitForSelector(LOGIN_SUCCESS_SELECTOR,...)
+                console.warn(`Login success selector "${LOGIN_SUCCESS_SELECTOR}" not found. Original error: ${e.message}. Current URL: ${page.url()}`);
+                try {
+                    console.log(`Attempting to save screenshot to ${LOGIN_FAILED_SCREENSHOT_PATH}...`);
+                    await page.screenshot({ path: LOGIN_FAILED_SCREENSHOT_PATH, fullPage: true });
+                    console.log(`Screenshot successfully saved to ${LOGIN_FAILED_SCREENSHOT_PATH}`);
+                } catch (screenshotError) {
+                    console.error(`FAILED to save ${LOGIN_FAILED_SCREENSHOT_PATH}. Screenshot error: ${screenshotError.message}`);
+                }
+                throw new Error(`Failed to verify login success (selector "${LOGIN_SUCCESS_SELECTOR}" not found). Original waitForSelector error: ${e.message}`);
             }
         } else {
             console.log('No login success selector provided, assuming login worked if no immediate error. Waiting a bit...');
-            await new Promise(resolve => setTimeout(resolve, 3000)); // GEWIJZIGD
+            await new Promise(resolve => setTimeout(resolve, 3000));
         }
         // --- EINDE LOGIN STAP ---
 
@@ -116,52 +112,48 @@ async function takeScreenshot() {
             console.log(`Waiting for selector "${mainCalendarContentSelector}" to appear...`);
             await page.waitForSelector(mainCalendarContentSelector, { timeout: 60000, visible: true });
             console.log('Main calendar content loaded. Proceeding to screenshot.');
-        } catch (error) {
-            console.error(`Timeout or error waiting for calendar selector AFTER LOGIN. Current URL: ${page.url()}`);
-            await page.screenshot({ path: DEBUG_SCREENSHOT_PATH, fullPage: true });
-            console.log(`Debug screenshot (after supposed login, waiting for calendar) saved to ${DEBUG_SCREENSHOT_PATH}.`);
-            throw error; // Hergooi de error zodat de main catch het oppakt
+        } catch (error) { // Dit is de catch voor waitForSelector(mainCalendarContentSelector,...)
+            console.error(`Timeout or error waiting for calendar selector "${mainCalendarContentSelector}" AFTER LOGIN. Original error: ${error.message}. Current URL: ${page.url()}`);
+            try {
+                console.log(`Attempting to save screenshot to ${DEBUG_SCREENSHOT_PATH}...`);
+                await page.screenshot({ path: DEBUG_SCREENSHOT_PATH, fullPage: true });
+                console.log(`Screenshot successfully saved to ${DEBUG_SCREENSHOT_PATH}.`);
+            } catch (screenshotError) {
+                console.error(`FAILED to save ${DEBUG_SCREENSHOT_PATH}. Screenshot error: ${screenshotError.message}`);
+            }
+            throw error; // Hergooi de originele error
         }
 
         console.log('Taking screenshot of the calendar page...');
         await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-        await new Promise(resolve => setTimeout(resolve, 1000)); // GEWIJZIGD
+        await new Promise(resolve => setTimeout(resolve, 1000));
         await page.screenshot({ path: SCREENSHOT_PATH, fullPage: true });
 
         console.log(`Screenshot saved to ${SCREENSHOT_PATH}`);
 
-    } catch (error) {
-        console.error('Error during screenshot process:', error.message);
-        // Probeer een algemene error screenshot te maken als er nog geen specifieke debug screenshot is gemaakt
-        // De 'page' variabele is hier mogelijk niet beschikbaar als de browser launch faalt.
-        // We kunnen proberen de screenshot te nemen als 'page' bestaat en open is.
-        // Echter, de 'page' variabele is gescoped binnen de try-block van de browser.launch.
-        // Om dit op te lossen, moeten we 'page' buiten de try{} van browser.launch declareren, of de screenshot logica anders structureren.
-        // Voor nu, de 'error_screenshot.png' logica is verplaatst naar de finally block als browser en page bestaan.
-        throw error; // Hergooi de error zodat main() het afhandelt
+    } catch (error) { // Algemene catch voor takeScreenshot
+        console.error('General error during screenshot process:', error.message); // Aangepaste log
+        // Probeer een algemene error screenshot te maken als page bestaat en open is
+        // en als er nog geen specifieke debug screenshots zijn gemaakt
+        if (page && !page.isClosed() &&
+            !fs.existsSync(DEBUG_SCREENSHOT_PATH) &&
+            !fs.existsSync(LOGIN_FAILED_SCREENSHOT_PATH) &&
+            !fs.existsSync(SCREENSHOT_PATH)) { // Alleen als er nog geen andere is
+            try {
+                console.log(`Attempting to save general error screenshot to ${ERROR_SCREENSHOT_PATH}...`);
+                await page.screenshot({ path: ERROR_SCREENSHOT_PATH, fullPage: true });
+                console.log(`General error screenshot saved as ${ERROR_SCREENSHOT_PATH}`);
+            } catch (ssError) {
+                console.error(`FAILED to save general error screenshot ${ERROR_SCREENSHOT_PATH}. Screenshot error: ${ssError.message}`);
+            }
+        }
+        throw error;
     } finally {
         if (browser) {
-            const pages = await browser.pages(); // Haal alle open pagina's op
-            if (pages.length > 0 && !pages[0].isClosed()) { // Gebruik de eerste pagina als 'page' hier niet direct beschikbaar is
-                const pageToScreenshot = pages[0];
-                 // Alleen als er een error was EN er nog geen specifieke debug screenshots zijn gemaakt
-                if (fs.existsSync(ERROR_SCREENSHOT_PATH) === false && // Controle of de file niet al bestaat (hacky, beter is een flag)
-                    !fs.existsSync(DEBUG_SCREENSHOT_PATH) && 
-                    !fs.existsSync(LOGIN_FAILED_SCREENSHOT_PATH) && 
-                    !fs.existsSync(SCREENSHOT_PATH)) {
-                    try {
-                        console.log('Attempting to take a final error screenshot...');
-                        await pageToScreenshot.screenshot({ path: ERROR_SCREENSHOT_PATH, fullPage: true });
-                        console.log(`General error screenshot saved as ${ERROR_SCREENSHOT_PATH}`);
-                    } catch (ssError) {
-                        console.error('Could not take general error screenshot in finally:', ssError.message);
-                    }
-                }
-            }
             await browser.close();
             console.log('Browser closed.');
         } else {
-            console.log('Browser was not launched or already closed.');
+            console.log('Browser was not launched or already closed in finally.');
         }
     }
 }
