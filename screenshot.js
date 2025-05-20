@@ -1,66 +1,65 @@
-const puppeteer = require('puppeteer');
+// At the top, change how puppeteer is required:
+// const puppeteer = require('puppeteer'); // REMOVE THIS LINE
+const puppeteer = require('puppeteer-extra'); // USE THIS INSTEAD
+const StealthPlugin = require('puppeteer-extra-plugin-stealth'); // ADD THIS
+puppeteer.use(StealthPlugin()); // ADD THIS to activate the stealth plugin
+
 const fs = require('fs');
 const axios = require('axios');
 const FormData = require('form-data');
 
 const FOREX_FACTORY_URL = 'https://www.forexfactory.com/calendar';
 const SCREENSHOT_PATH = 'forex_calendar.png';
-const DEBUG_SCREENSHOT_PATH = 'debug_screenshot.png'; // For debugging Cloudflare issues
+const DEBUG_SCREENSHOT_PATH = 'debug_screenshot.png';
 const DISCORD_WEBHOOK_URL = process.env.DISCORD_WEBHOOK_URL;
 
 async function takeScreenshot() {
-    console.log('Launching browser...');
+    console.log('Launching stealth browser...'); // Updated log message
     const browser = await puppeteer.launch({
-        headless: true, // 'new' for newer versions
+        headless: true, // Puppeteer-extra-plugin-stealth works best with headless: true or 'new'
         args: [
             '--no-sandbox',
             '--disable-setuid-sandbox',
             '--disable-dev-shm-usage',
             '--window-size=1600,1200'
+            // Stealth plugin handles many evasions, so fewer specific args might be needed here
         ]
     });
     const page = await browser.newPage();
-    // Optional: Set a common user agent to look more like a real browser
+    // Stealth plugin also helps with User-Agent, but setting one explicitly doesn't hurt
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.93 Safari/537.36');
+    // Optional: Set viewport for consistency
+    await page.setViewport({ width: 1600, height: 1200 });
 
 
     try {
         console.log(`Navigating to ${FOREX_FACTORY_URL}...`);
-        // Initial navigation with a generous timeout for the first load
         await page.goto(FOREX_FACTORY_URL, { waitUntil: 'networkidle0', timeout: 90000 });
 
         console.log('Initial page load complete. Checking for Cloudflare / waiting for main content...');
-        // Selector for an element that should ONLY exist on the actual calendar page,
-        // NOT on the Cloudflare interstitial page.
-        // This is the ID of the main div wrapping the calendar content on Forex Factory.
         const mainCalendarContentSelector = '#flexBox_flex_calendar_mainCal';
 
         try {
             console.log(`Waiting for selector "${mainCalendarContentSelector}" to appear...`);
-            await page.waitForSelector(mainCalendarContentSelector, { timeout: 60000 }); // Wait up to 60 seconds
+            await page.waitForSelector(mainCalendarContentSelector, { timeout: 60000 });
             console.log('Main calendar content loaded. Proceeding to screenshot.');
         } catch (error) {
             console.error(`Timeout or error waiting for selector "${mainCalendarContentSelector}". It's possible Cloudflare blocked access or the page structure changed.`);
             console.log('Taking a debug screenshot of the current page...');
             await page.screenshot({ path: DEBUG_SCREENSHOT_PATH, fullPage: true });
             console.log(`Debug screenshot saved to ${DEBUG_SCREENSHOT_PATH}. Check workflow artifacts.`);
-            throw error; // Re-throw to fail the job and indicate the issue
+            throw error;
         }
 
-        // --- Optional: Handle Cookie Banner (if present AFTER Cloudflare) ---
-        // ... (your cookie banner logic if needed)
-
         console.log('Taking screenshot of the calendar page...');
-        // Ensure the page has some height before fullPage screenshot
         await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-        await page.waitForTimeout(1000); // Give it a moment to render everything scrolled
+        await page.waitForTimeout(1000);
         await page.screenshot({ path: SCREENSHOT_PATH, fullPage: true });
 
         console.log(`Screenshot saved to ${SCREENSHOT_PATH}`);
 
     } catch (error) {
-        console.error('Error during screenshot process:', error);
-        // If a debug screenshot wasn't already taken, take one now
+        console.error('Error during screenshot process:', error.message);
         if (!fs.existsSync(DEBUG_SCREENSHOT_PATH) && !fs.existsSync(SCREENSHOT_PATH)) {
             try {
                 await page.screenshot({ path: 'error_screenshot.png', fullPage: true });
@@ -76,15 +75,20 @@ async function takeScreenshot() {
     }
 }
 
+// sendToDiscord and main functions remain the same
 async function sendToDiscord() {
-    // ... (your sendToDiscord function remains the same) ...
     if (!DISCORD_WEBHOOK_URL) {
         console.error('DISCORD_WEBHOOK_URL is not set.');
-        return;
+        return; // Exit if no webhook
     }
     if (!fs.existsSync(SCREENSHOT_PATH)) {
-        console.error(`Screenshot file ${SCREENSHOT_PATH} not found.`);
-        return;
+        console.warn(`Screenshot file ${SCREENSHOT_PATH} not found. Not sending to Discord.`);
+        // Optionally, you could send the debug_screenshot.png if the main one failed
+        // if (fs.existsSync(DEBUG_SCREENSHOT_PATH)) {
+        //    console.log('Attempting to send debug screenshot instead...');
+        //    // ... logic to send DEBUG_SCREENSHOT_PATH ...
+        // }
+        return; // Exit if no primary screenshot
     }
 
     console.log('Sending screenshot to Discord...');
@@ -113,16 +117,19 @@ async function sendToDiscord() {
         } else {
             console.error('Error Message:', error.message);
         }
-        throw error;
+        // Don't re-throw here if screenshot was taken but discord failed,
+        // as the main goal (screenshot) might be achieved.
+        // Or handle it as a full failure if Discord is critical.
     }
 }
 
 async function main() {
     try {
-        await takeScreenshot();
-        await sendToDiscord();
+        await takeScreenshot(); // This will create SCREENSHOT_PATH or throw error
+        await sendToDiscord();  // This will attempt to send SCREENSHOT_PATH
     } catch (error) {
-        console.error('Script failed:', error.message);
+        // Error from takeScreenshot will be caught here
+        console.error('Script failed:', error.message); // Error.message is better here
         process.exit(1);
     }
 }
