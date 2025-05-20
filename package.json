@@ -1,0 +1,14 @@
+{
+  "name": "forex-news-discord-bot",
+  "version": "1.0.0",
+  "description": "Takes a daily screenshot of Forex Factory calendar and sends to Discord.",
+  "main": "screenshot.js",
+  "scripts": {
+    "start": "node screenshot.js"
+  },
+  "dependencies": {
+    "axios": "^1.0.0",        // Or latest version
+    "form-data": "^4.0.0",    // Or latest version
+    "puppeteer": "^20.0.0"   // Or latest version
+  }
+}
