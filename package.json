@@ -7,8 +7,10 @@
     "start": "node screenshot.js"
   },
   "dependencies": {
-    "axios": "^1.0.0",
+    "axios": "^1.6.8", 
     "form-data": "^4.0.0",
-    "puppeteer": "^20.0.0"
+    "puppeteer": "^22.8.0", 
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2" 
   }
 }
