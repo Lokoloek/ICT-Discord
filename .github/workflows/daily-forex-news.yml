@@ -1,41 +1,54 @@
 name: Daily Forex Factory News
+
 on:
-schedule:
-# Runs at 07:00 UTC every day. Adjust as needed.
-# Use https://crontab.guru to help with cron syntax
-- cron: '0 7 * * *' # Pas dit aan naar jouw gewenste tijd, bv. '0 5 * * 1-5' voor 05:00 UTC op weekdagen
-workflow_dispatch: # Allows manual triggering from the Actions tab
+  schedule:
+    # Runs at 07:00 UTC every day. Adjust as needed.
+    # Use https://crontab.guru to help with cron syntax
+    - cron: '0 7 * * *' # Voorbeeld: elke dag om 07:00 UTC
+  workflow_dispatch: # Allows manual triggering from the Actions tab
+
 jobs:
-screenshot_and_send:
-runs-on: ubuntu-latest
-steps:
-- name: Checkout repository
-uses: actions/checkout@v4
-- name: Set up Node.js
-    uses: actions/setup-node@v4
-    with:
-      node-version: '18' # Of '20', 'lts/*'
+  screenshot_and_send:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-  - name: Install dependencies
-    run: npm install
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18' # Of '20', 'lts/*'
 
-  - name: Run screenshot script
-    env:
-      DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-      FOREX_FACTORY_USER: ${{ secrets.FOREX_FACTORY_USER }}   # NIEUW TOEGEVOEGD
-      FOREX_FACTORY_PASS: ${{ secrets.FOREX_FACTORY_PASS }}   # NIEUW TOEGEVOEGD
-    run: node screenshot.js
+      - name: Install dependencies
+        run: npm install
 
-  # Upload all potential screenshots as artifacts for debugging
-  - name: Upload screenshot artifact
-    if: always() # Run even if previous steps fail, for debugging
-    uses: actions/upload-artifact@v4
-    with:
-      name: forex-screenshots # Name of the artifact bundle
-      path: |
-        forex_calendar.png
-        debug_screenshot.png
-        login_failed_debug.png   # NIEUW TOEGEVOEGD
-        error_screenshot.png
-      retention-days: 5 # Optional: keep artifacts for X days
-      if-no-files-found: warn # Don't fail the workflow if one of these optional files isn't found
+      - name: Run screenshot script
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          FOREX_FACTORY_USER: ${{ secrets.FOREX_FACTORY_USER }}
+          FOREX_FACTORY_PASS: ${{ secrets.FOREX_FACTORY_PASS }}
+        run: node screenshot.js
+
+      # Optionele debug stap om bestanden te listen als artefacten niet werken
+      # - name: List files in workspace
+      #   if: always()
+      #   run: |
+      #     echo "Current directory: $(pwd)"
+      #     echo "Listing files:"
+      #     ls -la
+      #     echo "Disk space:"
+      #     df -h
+
+      - name: Upload screenshot artifact
+        if: always() # Run even if previous steps fail, for debugging
+        uses: actions/upload-artifact@v4
+        with:
+          name: forex-screenshots # Name of the artifact bundle
+          path: |
+            forex_calendar.png
+            debug_screenshot.png
+            login_failed_debug.png
+            error_screenshot.png
+            filter_error_debug.png   # Voor als filteren mislukt en die file wordt gemaakt
+          retention-days: 5 # Optional: keep artifacts for X days
+          if-no-files-found: warn # Don't fail the workflow if some optional files aren't found
