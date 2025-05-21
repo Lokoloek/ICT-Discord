@@ -47,7 +47,7 @@ async function takeScreenshot() {
                 '--window-position=0,0', '--ignore-certificate-errors',
                 '--ignore-certificate-errors-spki-list', `--user-agent=${userAgent}`,
                 '--disable-dev-shm-usage', '--disable-accelerated-2d-canvas',
-                '--disable-gpu', '--window-size=1920,1080',
+                '--disable-gpu', '--window-size=1920,1200', // Viewport breed en hoog genoeg
                 '--lang=en-US,en;q=0.9', '--accept-language=en-US,en;q=0.9',
             ],
             ignoreDefaultArgs: ['--enable-automation'],
@@ -55,7 +55,8 @@ async function takeScreenshot() {
 
         page = await browser.newPage();
         await page.setUserAgent(userAgent);
-        await page.setViewport({ width: 1200, height: 800 }); // Viewport consistent houden
+        // Viewport moet breed genoeg zijn voor 1050px en hoog genoeg voor 1080px
+        await page.setViewport({ width: 1200, height: 1200 }); 
         await page.setExtraHTTPHeaders({'accept-language': 'en-US,en;q=0.9'});
 
         // --- LOGIN STAP ---
@@ -126,13 +127,8 @@ async function takeScreenshot() {
             await page.evaluate(() => {
                 const selectorsToRemove = [
                     '#header', '#footer_wrapper', 'div.calendar__control.left',
-                    '.calendar__options', // Boven de tabel
-                    // Zorg dat deze twee interne kalender-elementen NIET worden verwijderd als je ze wilt zien:
-                    // '#flexBox_flex_calendar_mainCal > div.head', 
-                    // '#flexBox_flex_calendar_mainCal > div.options.sidebyside', 
-                    '.calendar__status',        // De lijn met "Top of Page, Default Page, Logout"
-                    'div.calendar__more',       // "↓ More" link
-                    'div.calendar__timezone',   // Timezone info
+                    '.calendar__options',
+                    '.calendar__status', 'div.calendar__more', 'div.calendar__timezone',
                     '#adblock_whitelist_pitch', '.calendarsite__speedbump', '.ff-ad',
                     'iframe[id^="google_ads_iframe"]', '.no-print', '.pagetitle',
                     '.content_tabs', '#content > .sidebar'
@@ -148,44 +144,42 @@ async function takeScreenshot() {
 
                 const calendarContainer = document.getElementById('flexBox_flex_calendar_mainCal');
                 if (calendarContainer) {
-                    calendarContainer.style.margin = '0 auto'; 
-                    calendarContainer.style.padding = '5px';   // Kleine padding binnen de container zelf
+                    calendarContainer.style.margin = '0'; // Forceer naar linksboven voor clippen
+                    calendarContainer.style.padding = '5px';
                     calendarContainer.style.border = 'none';
                     calendarContainer.style.boxShadow = 'none';
                 }
-                window.scrollTo(0,0);
+                window.scrollTo(0,0); // Scroll naar de top
             });
             console.log('Distracting elements REMOVED.');
-            await new Promise(resolve => setTimeout(resolve, 2000)); // Verhoogde wachttijd
+            await new Promise(resolve => setTimeout(resolve, 2000));
         } catch (evalError) {
             console.warn('Could not remove all distracting elements:', evalError.message);
         }
         // --- EINDE VERWIJDER STORENDE ELEMENTEN ---
 
-        // --- SCREENSHOT NEMEN VAN HET BODY ELEMENT (NU OPGESCHOOND) ---
-        console.log('Attempting to take screenshot of the cleaned BODY...');
+        // ***** BEGIN GEWIJZIGD BLOK VOOR SCREENSHOT MET CLIP *****
+        console.log('Attempting to take a CLIPPED screenshot of the page...');
         try {
-            const bodyForScreenshot = await page.$('body');
-            if (bodyForScreenshot) {
-                await bodyForScreenshot.screenshot({
-                    path: SCREENSHOT_PATH
-                    //  Je kunt fullPage: false proberen als er te veel witruimte is
-                    // fullPage: false 
-                });
-                console.log(`Screenshot of cleaned body saved to ${SCREENSHOT_PATH}`);
-            } else {
-                console.error('Could not find body element for screenshot. Taking full page debug screenshot.');
-                await page.screenshot({ path: DEBUG_SCREENSHOT_PATH, fullPage: true });
-                throw new Error('Body element not found for screenshot after cleaning.');
-            }
+            await page.screenshot({
+                path: SCREENSHOT_PATH,
+                clip: {
+                    x: 0,      // Start vanaf de linkerkant van de viewport
+                    y: 0,      // Start vanaf de bovenkant van de viewport
+                    width: 1050, // Jouw gewenste breedte
+                    height: 1080 // Jouw gewenste hoogte
+                }
+            });
+            console.log(`Clipped screenshot (1050x1080) saved to ${SCREENSHOT_PATH}`);
         } catch (screenshotError) {
-            console.error(`Error taking screenshot of cleaned body: ${screenshotError.message}`);
+            console.error(`Error taking clipped screenshot: ${screenshotError.message}`);
             if (!fs.existsSync(DEBUG_SCREENSHOT_PATH) && page && !page.isClosed()) {
                  await page.screenshot({ path: DEBUG_SCREENSHOT_PATH, fullPage: true });
+                 console.log(`Fallback debug screenshot saved to ${DEBUG_SCREENSHOT_PATH}`);
             }
             throw screenshotError;
         }
-        // --- EINDE SCREENSHOT NEMEN ---
+        // ***** EINDE GEWIJZIGD BLOK VOOR SCREENSHOT MET CLIP *****
 
     } catch (error) {
         console.error('General error during screenshot process:', error.message);
@@ -253,7 +247,7 @@ async function sendToDiscord() {
     } 
     else if (fs.existsSync(DEBUG_SCREENSHOT_PATH)) {
         console.warn(`${SCREENSHOT_PATH} not found. Attempting to send ${DEBUG_SCREENSHOT_PATH} instead.`);
-        await sendFileToDiscord(DEBUG_SCREENSHOT_PATH, 'forex_calendar_debug.png', `⚠️ **DEBUG: Forex Factory Calendar (Selector Failed) - ${new Date().toDateString()}**`);
+        await sendFileToDiscord(DEBUG_SCREENSHOT_PATH, 'forex_calendar_debug.png', `⚠️ **DEBUG: Forex Factory Calendar (Content/Clip Issue) - ${new Date().toDateString()}**`);
     } 
     else {
         console.warn(`Neither ${SCREENSHOT_PATH} nor ${DEBUG_SCREENSHOT_PATH} found. Not sending to Discord.`);
