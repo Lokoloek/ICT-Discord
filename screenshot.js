@@ -55,6 +55,7 @@ async function takeScreenshot() {
 
         page = await browser.newPage();
         await page.setUserAgent(userAgent);
+        // Begin met een redelijke viewport, wordt later aangepast
         await page.setViewport({ width: 1200, height: 1200 }); 
         await page.setExtraHTTPHeaders({'accept-language': 'en-US,en;q=0.9'});
 
@@ -108,7 +109,9 @@ async function takeScreenshot() {
 
         console.log('Calendar page loaded. Waiting for calendar data to be present...');
         const calendarDataLoadedSelector = 'tr.calendar__row--new-day';
+
         try {
+            console.log(`Waiting for calendar data selector "${calendarDataLoadedSelector}" to appear...`);
             await page.waitForSelector(calendarDataLoadedSelector, { timeout: 60000, visible: true });
             console.log('Main calendar data (first day row) loaded.');
         } catch (error) {
@@ -118,81 +121,88 @@ async function takeScreenshot() {
             throw error;
         }
 
-        // --- VERWIJDER STORENDE ELEMENTEN EN PAS KALENDER CONTAINER AAN ---
+        // --- VERWIJDER STORENDE ELEMENTEN ---
         try {
-            console.log('Attempting to REMOVE/HIDE distracting elements and style calendar container...');
+            console.log('Attempting to REMOVE distracting elements for a cleaner screenshot...');
             await page.evaluate(() => {
-                // Verwijder globale storende elementen
-                const globalSelectorsToRemove = [
-                    '#header', '#footer_wrapper', 'div.calendar__control.left', 
-                    '.calendar__options', // Grote filter/zoekbalk BOVEN de hoofd kalender div
-                    '.calendar__status',  // "Top of Page, Default Page, Logout" ONDER de tabel
-                    'div.calendar__timezone',
+                const selectorsToRemove = [
+                    '#header', '#footer_wrapper', 'div.calendar__control.left',
+                    '.calendar__options',
+                    '.calendar__status', 'div.calendar__more', 'div.calendar__timezone',
                     '#adblock_whitelist_pitch', '.calendarsite__speedbump', '.ff-ad',
                     'iframe[id^="google_ads_iframe"]', '.no-print', '.pagetitle',
                     '.content_tabs', '#content > .sidebar'
                 ];
-                globalSelectorsToRemove.forEach(selector => {
+                selectorsToRemove.forEach(selector => {
                     document.querySelectorAll(selector).forEach(el => el.remove());
                 });
                 
                 document.body.style.padding = '0px';
                 document.body.style.margin = '0px';
                 document.body.style.background = 'white';
-                document.body.style.overflow = 'hidden'; 
+                // document.body.style.overflow = 'hidden'; // Haal dit weg om hoogtebepaling niet te verstoren
 
                 const calendarContainer = document.getElementById('flexBox_flex_calendar_mainCal');
                 if (calendarContainer) {
-                    // Verwijder ongewenste elementen BINNEN de kalender container
-                    const internalSelectorsToRemove = [
-                        // '.options.sidebyside', // De "Up Next, Search..." balk. Zet uit commentaar om te verwijderen.
-                        '.foot'                  // De "More" link en zijn container (div.calendar__more zit hierin)
-                    ];
-                    internalSelectorsToRemove.forEach(sel => {
-                        calendarContainer.querySelectorAll(sel).forEach(el => el.remove());
-                    });
-
-                    // Stijl de hoofdcontainer
                     calendarContainer.style.margin = '0'; 
-                    calendarContainer.style.padding = '5px';
+                    calendarContainer.style.padding = '5px'; 
                     calendarContainer.style.border = 'none';
                     calendarContainer.style.boxShadow = 'none';
                 }
                 window.scrollTo(0,0);
             });
-            console.log('Distracting elements processed.');
-            await new Promise(resolve => setTimeout(resolve, 2000)); 
+            console.log('Distracting elements REMOVED.');
+            await new Promise(resolve => setTimeout(resolve, 2500));
         } catch (evalError) {
-            console.warn('Could not process all distracting elements:', evalError.message);
+            console.warn('Could not remove all distracting elements:', evalError.message);
         }
-        // --- EINDE VERWIJDER STORENDE ELEMENTEN ---
-
-        // --- SCREENSHOT NEMEN VAN DE KALENDER CONTAINER ZELF ---
-        console.log('Attempting to take screenshot of the CALENDAR CONTAINER...');
+        
+        // ***** BEGIN GEWIJZIGD SCREENSHOT BLOK (DYNAMISCHE HOOGTE CLIP) *****
+        console.log('Attempting to take a CLIPPED FULL PAGE screenshot after cleaning...');
         try {
-            const calendarElementSelector = '#flexBox_flex_calendar_mainCal';
-            const calendarElement = await page.$(calendarElementSelector);
-            
-            if (calendarElement) {
-                console.log('Calendar element found. Taking element screenshot...');
-                await calendarElement.screenshot({
-                    path: SCREENSHOT_PATH
-                });
-                console.log(`Element screenshot saved to ${SCREENSHOT_PATH}`);
+            let clipHeight = 1080; // Default hoogte als element niet gevonden wordt of 0 hoogte heeft
+            const calendarElementHeight = await page.evaluate(() => {
+                const el = document.getElementById('flexBox_flex_calendar_mainCal');
+                return el ? el.offsetHeight : null;
+            });
+
+            if (calendarElementHeight && calendarElementHeight > 0) {
+                clipHeight = calendarElementHeight + 10; // +10px marge voor padding/border van container
+                console.log(`Calculated clip height based on calendar element: ${clipHeight}px`);
             } else {
-                console.error(`Calendar element "${calendarElementSelector}" not found. Taking full page debug screenshot.`);
-                await page.screenshot({ path: DEBUG_SCREENSHOT_PATH, fullPage: true });
-                throw new Error(`Could not find element ${calendarElementSelector} to screenshot.`);
+                console.warn(`Could not determine calendar element height (value: ${calendarElementHeight}), using default clip height ${clipHeight}px.`);
             }
+            
+            const desiredClipWidth = 1050;
+            // Zorg dat viewport hoog en breed genoeg is voor de clip.
+            const vpWidth = desiredClipWidth + 50; // Marge voor de breedte
+            const vpHeight = clipHeight + 50;    // Marge voor de hoogte
+
+            console.log(`Adjusting viewport to ${vpWidth}x${vpHeight} for screenshot.`);
+            await page.setViewport({ width: vpWidth, height: vpHeight });
+            await new Promise(resolve => setTimeout(resolve, 500)); // Wacht op viewport resize
+
+            await page.screenshot({
+                path: SCREENSHOT_PATH,
+                // fullPage: false, // GEEN fullPage: true als we clippen op viewport-gebaseerde coördinaten
+                clip: {
+                    x: 0,       // We gaan ervan uit dat de content linksboven staat na opschonen en scrollTo(0,0)
+                    y: 0,
+                    width: desiredClipWidth,
+                    height: Math.min(clipHeight, vpHeight - 10) // Neem de berekende hoogte, maar niet meer dan de viewport - marge
+                }
+            });
+            console.log(`Clipped screenshot saved to ${SCREENSHOT_PATH}`);
+
         } catch (screenshotError) {
-            console.error(`Error taking element screenshot: ${screenshotError.message}`);
+            console.error(`Error taking clipped page screenshot: ${screenshotError.message}`);
             if (!fs.existsSync(DEBUG_SCREENSHOT_PATH) && page && !page.isClosed()) {
                  await page.screenshot({ path: DEBUG_SCREENSHOT_PATH, fullPage: true });
-                 console.log(`Fallback debug screenshot saved to ${DEBUG_SCREENSHOT_PATH}`);
+                 console.log(`Fallback full page debug screenshot saved to ${DEBUG_SCREENSHOT_PATH}`);
             }
             throw screenshotError;
         }
-        // --- EINDE SCREENSHOT NEMEN ---
+        // ***** EINDE GEWIJZIGD SCREENSHOT BLOK *****
 
     } catch (error) {
         console.error('General error during screenshot process:', error.message);
