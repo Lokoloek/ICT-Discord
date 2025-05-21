@@ -47,7 +47,7 @@ async function takeScreenshot() {
                 '--window-position=0,0', '--ignore-certificate-errors',
                 '--ignore-certificate-errors-spki-list', `--user-agent=${userAgent}`,
                 '--disable-dev-shm-usage', '--disable-accelerated-2d-canvas',
-                '--disable-gpu', '--window-size=1920,1200', // Viewport breed en hoog genoeg
+                '--disable-gpu', '--window-size=1920,1200', // Start met een ruime viewport
                 '--lang=en-US,en;q=0.9', '--accept-language=en-US,en;q=0.9',
             ],
             ignoreDefaultArgs: ['--enable-automation'],
@@ -55,7 +55,7 @@ async function takeScreenshot() {
 
         page = await browser.newPage();
         await page.setUserAgent(userAgent);
-        // Viewport moet breed genoeg zijn voor 1050px en hoog genoeg voor 1080px
+        // Viewport wordt later aangepast op basis van elementgrootte, maar begin ruim.
         await page.setViewport({ width: 1200, height: 1200 }); 
         await page.setExtraHTTPHeaders({'accept-language': 'en-US,en;q=0.9'});
 
@@ -144,7 +144,7 @@ async function takeScreenshot() {
 
                 const calendarContainer = document.getElementById('flexBox_flex_calendar_mainCal');
                 if (calendarContainer) {
-                    calendarContainer.style.margin = '0'; // Forceer naar linksboven voor clippen
+                    calendarContainer.style.margin = '0'; // Forceer naar linksboven
                     calendarContainer.style.padding = '5px';
                     calendarContainer.style.border = 'none';
                     calendarContainer.style.boxShadow = 'none';
@@ -158,19 +158,67 @@ async function takeScreenshot() {
         }
         // --- EINDE VERWIJDER STORENDE ELEMENTEN ---
 
-        // ***** BEGIN GEWIJZIGD BLOK VOOR SCREENSHOT MET CLIP *****
-        console.log('Attempting to take a CLIPPED screenshot of the page...');
+        // ***** BEGIN GEWIJZIGD BLOK VOOR SCREENSHOT MET DYNAMISCHE HOOGTE CLIP *****
+        console.log('Attempting to take a CLIPPED screenshot with dynamic height...');
         try {
-            await page.screenshot({
-                path: SCREENSHOT_PATH,
-                clip: {
-                    x: 0,      // Start vanaf de linkerkant van de viewport
-                    y: 0,      // Start vanaf de bovenkant van de viewport
-                    width: 1050, // Jouw gewenste breedte
-                    height: 1080 // Jouw gewenste hoogte
+            const calendarElementSelector = '#flexBox_flex_calendar_mainCal';
+            const calendarElement = await page.$(calendarElementSelector);
+
+            if (calendarElement) {
+                const boundingBox = await calendarElement.boundingBox();
+                if (boundingBox && boundingBox.height > 0) {
+                    console.log(`Calendar element dimensions: x=${boundingBox.x}, y=${boundingBox.y}, width=${boundingBox.width}, height=${boundingBox.height}`);
+                    
+                    // De gewenste breedte voor de screenshot
+                    const desiredWidth = 1050;
+                    // De x-coördinaat voor de clip, meestal 0 als de container links uitgelijnd is.
+                    // Als de container gecentreerd is in een bredere body, moet je boundingBox.x gebruiken.
+                    // Gezien calendarContainer.style.margin = '0'; is x waarschijnlijk dichtbij 0 relatief aan de body.
+                    // We clippen vanaf de x van het element zelf.
+                    let clipX = Math.floor(boundingBox.x);
+                    let clipWidth = desiredWidth;
+
+                    // Als de daadwerkelijke breedte van het element kleiner is dan 1050, gebruik dan de elementbreedte.
+                    if (boundingBox.width < desiredWidth) {
+                        clipWidth = Math.ceil(boundingBox.width);
+                    }
+                    
+                    // Zorg ervoor dat de viewport groot genoeg is voor de clip
+                    // De viewport breedte moet minstens clipX + clipWidth zijn
+                    // De viewport hoogte moet minstens boundingBox.y (meestal 0 na scroll) + boundingBox.height zijn
+                    const requiredViewportWidth = clipX + clipWidth + 10; // +10 marge
+                    const requiredViewportHeight = Math.ceil(boundingBox.y) + Math.ceil(boundingBox.height) + 10; // +10 marge
+                    
+                    const currentViewport = page.viewport();
+                    if (currentViewport.width < requiredViewportWidth || currentViewport.height < requiredViewportHeight) {
+                        console.log(`Adjusting viewport to ${requiredViewportWidth}x${requiredViewportHeight} for clip.`);
+                        await page.setViewport({ 
+                            width: Math.max(currentViewport.width, requiredViewportWidth), 
+                            height: Math.max(currentViewport.height, requiredViewportHeight)
+                        });
+                        await new Promise(resolve => setTimeout(resolve, 500)); // Wacht op viewport resize
+                    }
+
+                    await page.screenshot({
+                        path: SCREENSHOT_PATH,
+                        clip: {
+                            x: clipX,
+                            y: Math.floor(boundingBox.y), // Y-coördinaat van het element (meestal 0 na scrollTo(0,0))
+                            width: clipWidth,             // Gewenste breedte of elementbreedte
+                            height: Math.ceil(boundingBox.height) // Precieze hoogte van het element
+                        }
+                    });
+                    console.log(`Clipped screenshot (width: ${clipWidth}, dynamic height: ${Math.ceil(boundingBox.height)}) saved to ${SCREENSHOT_PATH}`);
+                } else {
+                    console.error('Could not get bounding box for calendar element or height is 0. Taking full page debug screenshot.');
+                    await page.screenshot({ path: DEBUG_SCREENSHOT_PATH, fullPage: true });
+                    throw new Error('Calendar element bounding box was null or height was 0.');
                 }
-            });
-            console.log(`Clipped screenshot (1050x1080) saved to ${SCREENSHOT_PATH}`);
+            } else {
+                console.error(`Calendar element "${calendarElementSelector}" not found. Taking full page debug screenshot.`);
+                await page.screenshot({ path: DEBUG_SCREENSHOT_PATH, fullPage: true });
+                throw new Error(`Could not find element ${calendarElementSelector} to screenshot.`);
+            }
         } catch (screenshotError) {
             console.error(`Error taking clipped screenshot: ${screenshotError.message}`);
             if (!fs.existsSync(DEBUG_SCREENSHOT_PATH) && page && !page.isClosed()) {
@@ -179,7 +227,7 @@ async function takeScreenshot() {
             }
             throw screenshotError;
         }
-        // ***** EINDE GEWIJZIGD BLOK VOOR SCREENSHOT MET CLIP *****
+        // ***** EINDE GEWIJZIGD BLOK VOOR SCREENSHOT MET DYNAMISCHE HOOGTE CLIP *****
 
     } catch (error) {
         console.error('General error during screenshot process:', error.message);
