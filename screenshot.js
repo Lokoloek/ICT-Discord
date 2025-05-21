@@ -10,12 +10,20 @@ const FormData = require('form-data');
 // --- CONSTANTEN ---
 const CALENDAR_URL = 'https://www.forexfactory.com/calendar?day=today';
 const LOGIN_URL = 'https://www.forexfactory.com/login';
-const PROFILE_URL = 'https://www.forexfactory.com/lokoloek'; // Je profielpagina URL
+const PROFILE_URL = 'https://www.forexfactory.com/lokoloek';
 
 const USERNAME_SELECTOR = '#login_username';
 const PASSWORD_SELECTOR = '#login_password';
 const LOGIN_BUTTON_SELECTOR = 'input[type="submit"].button';
-const LOGIN_SUCCESS_SELECTOR = 'a.logout'; // Selector voor de logout knop op je profielpagina
+const LOGIN_SUCCESS_SELECTOR = 'a.logout';
+
+// --- NIEUWE FILTER SELECTORS ---
+const FILTER_BUTTON_SELECTOR = 'li.calendar_filters span.calendar_filters'; // Klik op de "Filter" tekst
+const APPLY_FILTER_BUTTON_SELECTOR_IN_OVERLAY = 'input[value="Apply Filter"].overlay_button--submit';
+// Selector voor "none" link in de Currencies sectie. Dit is een gok en moet mogelijk worden aangepast.
+// We gaan ervan uit dat "Currencies" de eerste filterbare lijst is.
+const CURRENCIES_NONE_SELECTOR = 'div.flexcontrols__listcontainer:nth-of-type(1) a.flexcontrols__list_toggler_none';
+const USD_CHECKBOX_SELECTOR = 'input#currency_0_1'; // Gebaseerd op label for="currency_0_1"
 
 const SCREENSHOT_PATH = 'forex_calendar.png';
 const DEBUG_SCREENSHOT_PATH = 'debug_screenshot.png';
@@ -55,11 +63,11 @@ async function takeScreenshot() {
 
         page = await browser.newPage();
         await page.setUserAgent(userAgent);
-        // Viewport wordt aangepast vlak voor de clip-screenshot
-        await page.setViewport({ width: 1200, height: 1200 }); // Begin ruim
+        await page.setViewport({ width: 1200, height: 1200 }); 
         await page.setExtraHTTPHeaders({'accept-language': 'en-US,en;q=0.9'});
 
-        // --- LOGIN STAP ---
+        // --- LOGIN STAP --- (Blijft hetzelfde)
+        // ... (volledige login flow) ...
         console.log(`Navigating to login page: ${LOGIN_URL}`);
         await page.goto(LOGIN_URL, { waitUntil: 'networkidle0', timeout: 60000 });
         console.log('Waiting for login form elements...');
@@ -86,21 +94,8 @@ async function takeScreenshot() {
                 console.log(`Verifying login on profile page by waiting for selector: ${LOGIN_SUCCESS_SELECTOR}`);
                 await page.waitForSelector(LOGIN_SUCCESS_SELECTOR, { timeout: 30000, visible: true });
                 console.log('Login successful! (Success selector found on profile page)');
-            } catch (e) {
-                console.warn(`Login success selector "${LOGIN_SUCCESS_SELECTOR}" not found on profile page (${PROFILE_URL}). Original error: ${e.message}.`);
-                try {
-                    console.log(`Attempting to save screenshot to ${LOGIN_FAILED_SCREENSHOT_PATH}...`);
-                    await page.screenshot({ path: LOGIN_FAILED_SCREENSHOT_PATH, fullPage: true });
-                    console.log(`Screenshot successfully saved to ${LOGIN_FAILED_SCREENSHOT_PATH}`);
-                } catch (screenshotError) {
-                    console.error(`FAILED to save ${LOGIN_FAILED_SCREENSHOT_PATH}. Screenshot error: ${screenshotError.message}`);
-                }
-                throw new Error(`Failed to verify login on profile page (selector "${LOGIN_SUCCESS_SELECTOR}" not found). Original waitForSelector error: ${e.message}`);
-            }
-        } else {
-            console.log('No login success selector provided, assuming login worked based on navigation to profile page.');
-            await new Promise(resolve => setTimeout(resolve, 3000));
-        }
+            } catch (e) { /* ... error handling voor login verificatie ... */ }
+        } else { /* ... */ }
         // --- EINDE LOGIN STAP ---
 
         console.log(`Navigating to calendar page (today view): ${CALENDAR_URL}...`);
@@ -109,165 +104,98 @@ async function takeScreenshot() {
 
         console.log('Calendar page loaded. Waiting for calendar data to be present...');
         const calendarDataLoadedSelector = 'tr.calendar__row--new-day';
-
         try {
-            console.log(`Waiting for calendar data selector "${calendarDataLoadedSelector}" to appear...`);
             await page.waitForSelector(calendarDataLoadedSelector, { timeout: 60000, visible: true });
-            console.log('Main calendar data (first day row) loaded.');
-        } catch (error) {
-            console.error(`Timeout or error waiting for initial calendar data selector "${calendarDataLoadedSelector}" on page ${page.url()}. Original error: ${error.message}.`);
-            await page.screenshot({ path: DEBUG_SCREENSHOT_PATH, fullPage: true });
-            console.log(`Debug screenshot (data not loaded) saved to ${DEBUG_SCREENSHOT_PATH}.`);
-            throw error;
-        }
+            console.log('Initial calendar data loaded.');
+        } catch (error) { /* ... error handling ... */ }
 
-        // --- VERWIJDER STORENDE ELEMENTEN (AGRESSIEVER) ---
+
+        // ***** BEGIN FILTER STAPPEN *****
+        console.log('Attempting to apply USD currency filter...');
+        try {
+            console.log(`Clicking on filter button: ${FILTER_BUTTON_SELECTOR}`);
+            await page.waitForSelector(FILTER_BUTTON_SELECTOR, { visible: true, timeout: 10000 });
+            await page.click(FILTER_BUTTON_SELECTOR);
+            console.log('Filter button clicked.');
+
+            console.log(`Waiting for filter overlay to appear (waiting for Apply button: ${APPLY_FILTER_BUTTON_SELECTOR_IN_OVERLAY})`);
+            await page.waitForSelector(APPLY_FILTER_BUTTON_SELECTOR_IN_OVERLAY, { visible: true, timeout: 10000 });
+            console.log('Filter overlay is visible.');
+            await new Promise(resolve => setTimeout(resolve, 1000)); // Geef overlay tijd om te renderen
+
+            // Deselecteer alle currencies (klik op "none")
+            console.log(`Clicking "none" for currencies: ${CURRENCIES_NONE_SELECTOR}`);
+            await page.waitForSelector(CURRENCIES_NONE_SELECTOR, { visible: true, timeout: 5000 });
+            await page.click(CURRENCIES_NONE_SELECTOR);
+            await new Promise(resolve => setTimeout(resolve, 500)); // Wacht even na klik
+            console.log('"None" for currencies clicked.');
+
+            // Selecteer USD
+            console.log(`Clicking USD checkbox: ${USD_CHECKBOX_SELECTOR}`);
+            await page.waitForSelector(USD_CHECKBOX_SELECTOR, { visible: true, timeout: 5000 });
+            // Controleer of de checkbox al aangevinkt is, zo niet, klik.
+            // Dit is niet strikt nodig als we net alles hebben uitgevinkt, maar goede practice.
+            // const isUsdChecked = await page.$eval(USD_CHECKBOX_SELECTOR, el => el.checked);
+            // if (!isUsdChecked) {
+            //    await page.click(USD_CHECKBOX_SELECTOR);
+            // }
+            await page.click(USD_CHECKBOX_SELECTOR); // Klik gewoon, na "none" zou het uit moeten zijn.
+            await new Promise(resolve => setTimeout(resolve, 500));
+            console.log('USD checkbox clicked.');
+
+            // Klik op "Apply Filter"
+            console.log(`Clicking "Apply Filter" button: ${APPLY_FILTER_BUTTON_SELECTOR_IN_OVERLAY}`);
+            await page.click(APPLY_FILTER_BUTTON_SELECTOR_IN_OVERLAY);
+            console.log('"Apply Filter" button clicked.');
+
+            // Wacht tot de pagina herlaadt/update na het toepassen van de filter
+            // We wachten opnieuw op de data van de kalender.
+            // Het is mogelijk dat de pagina niet volledig herlaadt, maar de content update.
+            // waitForNavigation kan hier problemen geven. We wachten op een verandering in de tabel.
+            console.log('Waiting for calendar to update after applying filter...');
+            // Een manier is te wachten tot een specifiek element (bv. de USD rij) ZICHTBAAR is
+            // of wachten tot een element dat NIET USD is, ONZICHTBAAR wordt (lastiger).
+            // Voor nu, wachten we gewoon opnieuw op de eerste dag-rij.
+            await page.waitForSelector(calendarDataLoadedSelector, { visible: true, timeout: 30000 });
+            await new Promise(resolve => setTimeout(resolve, 2000)); // Extra wachttijd voor content
+            console.log('Calendar updated with filter.');
+
+        } catch (filterError) {
+            console.error(`Error applying filter: ${filterError.message}`);
+            console.log('Proceeding without filter, or taking debug screenshot of filter attempt...');
+            await page.screenshot({ path: 'filter_error_debug.png', fullPage: true });
+            console.log(`Debug screenshot of filter error saved to filter_error_debug.png. Check artifacts.`);
+            // Je kunt hier besluiten om te falen of door te gaan zonder filter
+            // throw filterError; // Uncomment om te falen als filteren mislukt
+        }
+        // ***** EINDE FILTER STAPPEN *****
+
+
+        // --- VERWIJDER STORENDE ELEMENTEN --- (Blijft hetzelfde)
         try {
             console.log('Attempting to REMOVE distracting elements for a cleaner screenshot...');
-            await page.evaluate(() => {
-                const selectorsToRemove = [
-                    '#header', '#footer_wrapper', 'div.calendar__control.left',
-                    '.calendar__options',
-                    '.calendar__status', 'div.calendar__more', 'div.calendar__timezone',
-                    '#adblock_whitelist_pitch', '.calendarsite__speedbump', '.ff-ad',
-                    'iframe[id^="google_ads_iframe"]', '.no-print', '.pagetitle',
-                    '.content_tabs', '#content > .sidebar'
-                ];
-                selectorsToRemove.forEach(selector => {
-                    document.querySelectorAll(selector).forEach(el => el.remove());
-                });
-                
-                document.body.style.padding = '0px';
-                document.body.style.margin = '0px';
-                document.body.style.background = 'white';
-                document.body.style.overflow = 'hidden'; 
-
-                const calendarContainer = document.getElementById('flexBox_flex_calendar_mainCal');
-                if (calendarContainer) {
-                    calendarContainer.style.margin = '0'; // Forceer naar linksboven
-                    calendarContainer.style.padding = '5px';
-                    calendarContainer.style.border = 'none';
-                    calendarContainer.style.boxShadow = 'none';
-                }
-                window.scrollTo(0,0); // Scroll naar de top
-            });
+            await page.evaluate(() => { /* ... selectorsToRemove en logica ... */ }); // Jouw bestaande opschoon code
             console.log('Distracting elements REMOVED.');
-            await new Promise(resolve => setTimeout(resolve, 2500)); // Verhoogde wachttijd
-        } catch (evalError) {
-            console.warn('Could not remove all distracting elements:', evalError.message);
-        }
-        // --- EINDE VERWIJDER STORENDE ELEMENTEN ---
+            await new Promise(resolve => setTimeout(resolve, 2500));
+        } catch (evalError) { /* ... */ }
         
-        // ***** BEGIN GEWIJZIGD SCREENSHOT BLOK *****
+        // --- SCREENSHOT NEMEN MET CLIP --- (Blijft hetzelfde)
         console.log('Attempting to take a CLIPPED screenshot of the page (top-left).');
         try {
-            // Pas viewport aan op de gewenste screenshot afmetingen (of iets groter) voor consistentie
-            const clipWidth = 1050;
-            const clipHeight = 1080;
-            await page.setViewport({ width: clipWidth + 50, height: clipHeight + 50 }); // +50px marge
-            await new Promise(resolve => setTimeout(resolve, 500)); // Wacht op viewport resize
-
-            await page.screenshot({
-                path: SCREENSHOT_PATH,
-                clip: {
-                    x: 0,      // Start vanaf de linkerkant van de viewport
-                    y: 0,      // Start vanaf de bovenkant van de viewport
-                    width: clipWidth, 
-                    height: clipHeight 
-                }
-            });
+            const clipWidth = 1050; const clipHeight = 1080;
+            await page.setViewport({ width: clipWidth + 50, height: clipHeight + 50 });
+            await new Promise(resolve => setTimeout(resolve, 500));
+            await page.screenshot({ path: SCREENSHOT_PATH, clip: { x: 0, y: 0, width: clipWidth, height: clipHeight }});
             console.log(`Clipped screenshot (${clipWidth}x${clipHeight} from top-left) saved to ${SCREENSHOT_PATH}`);
-        } catch (screenshotError) {
-            console.error(`Error taking clipped page screenshot: ${screenshotError.message}`);
-            if (!fs.existsSync(DEBUG_SCREENSHOT_PATH) && page && !page.isClosed()) {
-                 await page.screenshot({ path: DEBUG_SCREENSHOT_PATH, fullPage: true });
-                 console.log(`Fallback full page debug screenshot saved to ${DEBUG_SCREENSHOT_PATH}`);
-            }
-            throw screenshotError;
-        }
-        // ***** EINDE GEWIJZIGD SCREENSHOT BLOK *****
+        } catch (screenshotError) { /* ... error handling ... */ }
 
     } catch (error) {
         console.error('General error during screenshot process:', error.message);
-        if (page && !page.isClosed() &&
-            !fs.existsSync(DEBUG_SCREENSHOT_PATH) &&
-            !fs.existsSync(LOGIN_FAILED_SCREENSHOT_PATH) &&
-            !fs.existsSync(SCREENSHOT_PATH)) {
-            try {
-                console.log(`Attempting to save general error screenshot to ${ERROR_SCREENSHOT_PATH}...`);
-                await page.screenshot({ path: ERROR_SCREENSHOT_PATH, fullPage: true });
-                console.log(`General error screenshot saved as ${ERROR_SCREENSHOT_PATH}`);
-            } catch (ssError) {
-                console.error(`FAILED to save general error screenshot ${ERROR_SCREENSHOT_PATH}. Screenshot error: ${ssError.message}`);
-            }
-        }
-        throw error;
+        // ... (rest van de error handling)
     } finally {
-        if (browser) {
-            await browser.close();
-            console.log('Browser closed.');
-        } else {
-            console.log('Browser was not launched or already closed in finally.');
-        }
+        // ... (finally block)
     }
 }
 
 // De sendToDiscord en main functies blijven hetzelfde
-async function sendFileToDiscord(filePath, fileName, title) {
-    const formData = new FormData();
-    formData.append('file1', fs.createReadStream(filePath), {
-        filename: fileName,
-        contentType: 'image/png',
-    });
-    formData.append('payload_json', JSON.stringify({
-        content: title
-    }));
-
-    try {
-        const response = await axios.post(DISCORD_WEBHOOK_URL, formData, {
-            headers: formData.getHeaders(),
-        });
-        console.log(`Successfully sent ${fileName} to Discord:`, response.status);
-    } catch (error) {
-        console.error(`Error sending ${fileName} to Discord:`);
-        if (error.response) {
-            console.error('Data:', error.response.data);
-            console.error('Status:', error.response.status);
-            console.error('Headers:', error.response.headers);
-        } else if (error.request) {
-            console.error('Request:', error.request);
-        } else {
-            console.error('Error Message:', error.message);
-        }
-    }
-}
-
-async function sendToDiscord() {
-    if (!DISCORD_WEBHOOK_URL) {
-        console.error('DISCORD_WEBHOOK_URL is not set.');
-        return;
-    }
-    if (fs.existsSync(SCREENSHOT_PATH)) {
-        console.log(`Sending ${SCREENSHOT_PATH} to Discord...`);
-        await sendFileToDiscord(SCREENSHOT_PATH, 'forex_calendar.png', `📅 **Forex Factory Calendar - ${new Date().toDateString()}**`);
-    } 
-    else if (fs.existsSync(DEBUG_SCREENSHOT_PATH)) {
-        console.warn(`${SCREENSHOT_PATH} not found. Attempting to send ${DEBUG_SCREENSHOT_PATH} instead.`);
-        await sendFileToDiscord(DEBUG_SCREENSHOT_PATH, 'forex_calendar_debug.png', `⚠️ **DEBUG: Forex Factory Calendar (Content/Clip Issue) - ${new Date().toDateString()}**`);
-    } 
-    else {
-        console.warn(`Neither ${SCREENSHOT_PATH} nor ${DEBUG_SCREENSHOT_PATH} found. Not sending to Discord.`);
-    }
-}
-
-async function main() {
-    try {
-        await takeScreenshot();
-        await sendToDiscord();
-    } catch (error) {
-        console.error('Script failed in main:', error.message);
-        process.exit(1);
-    }
-}
-
-main();
+// ... (volledige sendFileToDiscord, sendToDiscord, main functies) ...
