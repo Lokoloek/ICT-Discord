@@ -25,9 +25,19 @@ jobs:
       - name: Run screenshot script
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          FOREX_FACTORY_USER: ${{ secrets.FOREX_FACTORY_USER }}   # NIEUW TOEGEVOEGD
-          FOREX_FACTORY_PASS: ${{ secrets.FOREX_FACTORY_PASS }}   # NIEUW TOEGEVOEGD
+          FOREX_FACTORY_USER: ${{ secrets.FOREX_FACTORY_USER }}
+          FOREX_FACTORY_PASS: ${{ secrets.FOREX_FACTORY_PASS }}
         run: node screenshot.js
+
+      # TIJDELIJKE DEBUG STAP (optioneel, maar nuttig als artefacten nog steeds niet verschijnen)
+      # - name: List files in workspace 
+      #   if: always() 
+      #   run: |
+      #     echo "Current directory: $(pwd)"
+      #     echo "Listing files:"
+      #     ls -la
+      #     echo "Disk space:"
+      #     df -h
 
       # Upload all potential screenshots as artifacts for debugging
       - name: Upload screenshot artifact
@@ -38,7 +48,8 @@ jobs:
           path: |
             forex_calendar.png
             debug_screenshot.png
-            login_failed_debug.png   # NIEUW TOEGEVOEGD
+            login_failed_debug.png
             error_screenshot.png
+            filter_error_debug.png   # ***** NIEUW TOEGEVOEGD *****
           retention-days: 5 # Optional: keep artifacts for X days
           if-no-files-found: warn # Don't fail the workflow if one of these optional files isn't found
