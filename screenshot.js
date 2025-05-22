@@ -15,11 +15,11 @@ const PROFILE_URL = 'https://www.forexfactory.com/lo3k'; // Jouw bevestigde prof
 const USERNAME_SELECTOR = '#login_username';
 const PASSWORD_SELECTOR = '#login_password';
 const LOGIN_BUTTON_SELECTOR = 'input[type="submit"].button';
-// const LOGIN_SUCCESS_SELECTOR = 'a.logout'; // We gebruiken dit niet meer actief
+// const LOGIN_SUCCESS_SELECTOR = 'a.logout'; // Niet meer actief gebruikt voor verificatie
 
 const SCREENSHOT_PATH = 'forex_calendar.png';
-const DEBUG_SCREENSHOT_PATH = 'debug_screenshot.png';
-const LOGIN_FAILED_SCREENSHOT_PATH = 'login_failed_debug.png'; // Wordt nu minder waarschijnlijk
+const DEBUG_SCREENSHOT_PATH = 'debug_screenshot.png'; // Nog steeds nuttig voor andere debugs
+const LOGIN_FAILED_SCREENSHOT_PATH = 'login_failed_debug.png'; 
 const ERROR_SCREENSHOT_PATH = 'error_screenshot.png';
 
 const DISCORD_WEBHOOK_URL = process.env.DISCORD_WEBHOOK_URL;
@@ -76,9 +76,8 @@ async function takeScreenshot() {
             page.click(LOGIN_BUTTON_SELECTOR),
             page.waitForNavigation({ waitUntil: 'networkidle0', timeout: 60000 })
         ]);
-        // We gaan er vanuit dat de login succesvol was (gezien eerdere email notificatie).
-        // De profielpagina check wordt overgeslagen omdat het een 404 gaf.
         console.log(`Landed on ${page.url()} after login click. Proceeding as if login was successful.`);
+        // De profielpagina check is verwijderd.
         // --- EINDE LOGIN STAP (VEREENVOUDIGD) ---
 
         console.log(`Navigating directly to calendar page (today view): ${CALENDAR_URL}...`);
@@ -92,9 +91,10 @@ async function takeScreenshot() {
             console.log('Main calendar data (first day row) loaded.');
         } catch (error) {
             console.error(`Timeout or error waiting for initial calendar data selector "${calendarDataLoadedSelector}" on page ${page.url()}. Original error: ${error.message}.`);
+            // Maak een debug screenshot als data niet laadt, maar sla op als DEBUG_SCREENSHOT_PATH
             await page.screenshot({ path: DEBUG_SCREENSHOT_PATH, fullPage: true });
             console.log(`Debug screenshot (data not loaded) saved to ${DEBUG_SCREENSHOT_PATH}.`);
-            throw error;
+            throw error; // Gooi error zodat main catch het oppakt
         }
 
         // --- VERWIJDER STORENDE ELEMENTEN ---
@@ -118,7 +118,7 @@ async function takeScreenshot() {
                 // document.body.style.overflow = 'hidden'; // Uitgecommentarieerd
                 const calendarContainer = document.getElementById('flexBox_flex_calendar_mainCal');
                 if (calendarContainer) {
-                    calendarContainer.style.margin = '0'; 
+                    calendarContainer.style.margin = '0 auto'; // Centreer
                     calendarContainer.style.padding = '5px'; 
                     calendarContainer.style.border = 'none';
                     calendarContainer.style.boxShadow = 'none';
@@ -131,8 +131,8 @@ async function takeScreenshot() {
             console.warn('Could not remove all distracting elements:', evalError.message);
         }
         
-        // ***** SCREENSHOT BLOK MET DYNAMISCHE HOOGTE CLIP *****
-        console.log('Attempting to take a CLIPPED screenshot based on calendar element height...');
+        // ***** BEGIN GEWIJZIGD SCREENSHOT BLOK *****
+        console.log('Attempting to take final screenshot...');
         try {
             const calendarElementSelector = '#flexBox_flex_calendar_mainCal';
             const calendarElementHandle = await page.$(calendarElementSelector);
@@ -143,50 +143,39 @@ async function takeScreenshot() {
                     const desiredWidth = 1050;
                     let clipX = Math.floor(boundingBox.x);
                     let clipWidth = desiredWidth;
-                    if (boundingBox.width < desiredWidth) {
-                        clipWidth = Math.ceil(boundingBox.width);
-                    }
-                    if ((clipX + clipWidth) > (boundingBox.x + boundingBox.width)) {
-                        clipX = Math.max(0, Math.floor(boundingBox.x + boundingBox.width - clipWidth) );
-                    }
+                    if (boundingBox.width < desiredWidth) clipWidth = Math.ceil(boundingBox.width);
+                    if ((clipX + clipWidth) > (boundingBox.x + boundingBox.width)) clipX = Math.max(0, Math.floor(boundingBox.x + boundingBox.width - clipWidth));
                     let clipHeight = Math.ceil(boundingBox.height);
-                    console.log(`Calendar element dimensions: x=${boundingBox.x}, y=${boundingBox.y}, width=${boundingBox.width}, height=${boundingBox.height}`);
-                    console.log(`Clipping at: x=${clipX}, y=${Math.floor(boundingBox.y)}, width=${clipWidth}, height=${clipHeight}`);
+                    
+                    console.log(`Attempting CLIPPED screenshot: x=${clipX}, y=${Math.floor(boundingBox.y)}, width=${clipWidth}, height=${clipHeight}`);
                     const requiredViewportWidth = clipX + clipWidth + 20;
                     const requiredViewportHeight = Math.floor(boundingBox.y) + clipHeight + 20;
                     const currentViewport = page.viewport();
                     if (currentViewport.width < requiredViewportWidth || currentViewport.height < requiredViewportHeight) {
-                        console.log(`Adjusting viewport to ${requiredViewportWidth}x${requiredViewportHeight} for clip.`);
-                        await page.setViewport({ 
-                            width: Math.max(currentViewport.width, requiredViewportWidth), 
-                            height: Math.max(currentViewport.height, requiredViewportHeight)
-                        });
+                        await page.setViewport({ width: Math.max(currentViewport.width, requiredViewportWidth), height: Math.max(currentViewport.height, requiredViewportHeight) });
                         await new Promise(resolve => setTimeout(resolve, 500));
                     }
-                    await page.screenshot({
-                        path: SCREENSHOT_PATH,
-                        clip: { x: clipX, y: Math.floor(boundingBox.y), width: clipWidth, height: clipHeight }
-                    });
-                    console.log(`Clipped screenshot saved to ${SCREENSHOT_PATH}`);
+                    await page.screenshot({ path: SCREENSHOT_PATH, clip: { x: clipX, y: Math.floor(boundingBox.y), width: clipWidth, height: clipHeight }});
+                    console.log(`Clipped element screenshot saved to ${SCREENSHOT_PATH}`);
                 } else {
-                    console.error('Could not get valid bounding box for calendar element or height is 0. Taking full page debug screenshot.');
-                    await page.screenshot({ path: DEBUG_SCREENSHOT_PATH, fullPage: true });
-                    throw new Error('Calendar element bounding box was null or height was 0.');
+                    console.warn('Could not get valid bounding box for calendar element. Taking full page screenshot and saving as SCREENSHOT_PATH.');
+                    await page.screenshot({ path: SCREENSHOT_PATH, fullPage: true }); 
+                    console.log(`Full page screenshot (due to bounding box issue) saved to ${SCREENSHOT_PATH}`);
                 }
             } else {
-                console.error(`Calendar element "${calendarElementSelector}" not found. Taking full page debug screenshot.`);
-                await page.screenshot({ path: DEBUG_SCREENSHOT_PATH, fullPage: true });
-                throw new Error(`Could not find element ${calendarElementSelector} to screenshot.`);
+                console.warn(`Calendar element "${calendarElementSelector}" not found. Taking full page screenshot of cleaned page and saving as SCREENSHOT_PATH.`);
+                await page.screenshot({ path: SCREENSHOT_PATH, fullPage: true }); 
+                console.log(`Full page screenshot (element not found) saved to ${SCREENSHOT_PATH}`);
             }
         } catch (screenshotError) {
-            console.error(`Error taking clipped screenshot: ${screenshotError.message}`);
-            if (!fs.existsSync(DEBUG_SCREENSHOT_PATH) && page && !page.isClosed()) {
-                 await page.screenshot({ path: DEBUG_SCREENSHOT_PATH, fullPage: true });
-                 console.log(`Fallback debug screenshot saved to ${DEBUG_SCREENSHOT_PATH}`);
+            console.error(`Error during final screenshot attempt: ${screenshotError.message}`);
+            if (!fs.existsSync(SCREENSHOT_PATH) && page && !page.isClosed()) { // Als SCREENSHOT_PATH nog niet bestaat
+                 await page.screenshot({ path: DEBUG_SCREENSHOT_PATH, fullPage: true }); // Maak dan een debug
+                 console.log(`Fallback debug screenshot (after error) saved to ${DEBUG_SCREENSHOT_PATH}`);
             }
             throw screenshotError;
         }
-        // ***** EINDE SCREENSHOT BLOK *****
+        // ***** EINDE GEWIJZIGD SCREENSHOT BLOK *****
 
     } catch (error) {
         console.error('General error during screenshot process:', error.message);
@@ -252,9 +241,9 @@ async function sendToDiscord() {
         console.log(`Sending ${SCREENSHOT_PATH} to Discord...`);
         await sendFileToDiscord(SCREENSHOT_PATH, 'forex_calendar.png', `📅 **Forex Factory Calendar - ${new Date().toDateString()}**`);
     } 
-    else if (fs.existsSync(DEBUG_SCREENSHOT_PATH)) {
+    else if (fs.existsSync(DEBUG_SCREENSHOT_PATH)) { // Fallback naar debug screenshot als hoofdscreenshot mist
         console.warn(`${SCREENSHOT_PATH} not found. Attempting to send ${DEBUG_SCREENSHOT_PATH} instead.`);
-        await sendFileToDiscord(DEBUG_SCREENSHOT_PATH, 'forex_calendar_debug.png', `⚠️ **DEBUG: Forex Factory Calendar (Content/Clip Issue) - ${new Date().toDateString()}**`);
+        await sendFileToDiscord(DEBUG_SCREENSHOT_PATH, 'forex_calendar_debug.png', `⚠️ **DEBUG: Forex Factory Calendar - ${new Date().toDateString()}**`);
     } 
     else {
         console.warn(`Neither ${SCREENSHOT_PATH} nor ${DEBUG_SCREENSHOT_PATH} found. Not sending to Discord.`);
