@@ -12,13 +12,13 @@ const CALENDAR_URL = 'https://www.forexfactory.com/calendar?day=today';
 const LOGIN_URL = 'https://www.forexfactory.com/login';
 const PROFILE_URL = 'https://www.forexfactory.com/lo3k'; // Jouw bevestigde profielpagina URL
 
-// AANGEPAST: Gebruik de unieke 'name' attributen in plaats van ID
+// AANGEPAST: Gebruik name attributen
 const USERNAME_SELECTOR = 'input[name="vb_login_username"]';
 const PASSWORD_SELECTOR = 'input[name="vb_login_password"]';
-const LOGIN_BUTTON_SELECTOR = 'input[type="submit"].button';
+// LOGIN_BUTTON_SELECTOR is volledig verwijderd, we gebruiken de Enter toets!
 
 const SCREENSHOT_PATH = 'forex_calendar.png';
-const DEBUG_SCREENSHOT_PATH = 'debug_screenshot.png'; // Nog steeds nuttig voor andere debugs
+const DEBUG_SCREENSHOT_PATH = 'debug_screenshot.png'; 
 const LOGIN_FAILED_SCREENSHOT_PATH = 'login_failed_debug.png'; 
 const ERROR_SCREENSHOT_PATH = 'error_screenshot.png';
 
@@ -63,24 +63,26 @@ async function takeScreenshot() {
         await page.goto(LOGIN_URL, { waitUntil: 'networkidle0', timeout: 60000 });
         console.log('Waiting for login form elements...');
         
-        // AANGEPAST: visible: true weggehaald zodat Puppeteer niet blijft hangen als CSS de velden 'onzichtbaar' maakt
+        // AANGEPAST: Geen visible: true meer
         await page.waitForSelector(USERNAME_SELECTOR, { timeout: 30000 });
         await page.waitForSelector(PASSWORD_SELECTOR, { timeout: 30000 });
-        await page.waitForSelector(LOGIN_BUTTON_SELECTOR, { timeout: 30000 });
         
         console.log('Typing username...');
         await page.type(USERNAME_SELECTOR, FOREX_USER);
         await new Promise(resolve => setTimeout(resolve, 500));
+        
         console.log('Typing password...');
         await page.type(PASSWORD_SELECTOR, FOREX_PASS);
         await new Promise(resolve => setTimeout(resolve, 500));
-        console.log('Clicking login button...');
+        
+        // AANGEPAST: Druk op Enter in plaats van klikken op een knop
+        console.log('Pressing Enter to login...');
         await Promise.all([
-            page.click(LOGIN_BUTTON_SELECTOR),
+            page.keyboard.press('Enter'),
             page.waitForNavigation({ waitUntil: 'networkidle0', timeout: 60000 })
         ]);
+        
         console.log(`Landed on ${page.url()} after login click. Proceeding as if login was successful.`);
-        // De profielpagina check is verwijderd.
         // --- EINDE LOGIN STAP (VEREENVOUDIGD) ---
 
         console.log(`Navigating directly to calendar page (today view): ${CALENDAR_URL}...`);
