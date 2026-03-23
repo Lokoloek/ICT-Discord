@@ -10,12 +10,9 @@ const FormData = require('form-data');
 // --- CONSTANTEN ---
 const CALENDAR_URL = 'https://www.forexfactory.com/calendar?day=today';
 const LOGIN_URL = 'https://www.forexfactory.com/login';
-const PROFILE_URL = 'https://www.forexfactory.com/lo3k'; // Jouw bevestigde profielpagina URL
 
-// AANGEPAST: Gebruik name attributen
 const USERNAME_SELECTOR = 'input[name="vb_login_username"]';
 const PASSWORD_SELECTOR = 'input[name="vb_login_password"]';
-// LOGIN_BUTTON_SELECTOR is volledig verwijderd, we gebruiken de Enter toets!
 
 const SCREENSHOT_PATH = 'forex_calendar.png';
 const DEBUG_SCREENSHOT_PATH = 'debug_screenshot.png'; 
@@ -29,7 +26,7 @@ const FOREX_PASS = process.env.FOREX_FACTORY_PASS;
 
 async function takeScreenshot() {
     if (!FOREX_USER || !FOREX_PASS) {
-        console.error('Forex Factory username or password not set in GitHub Secrets (FOREX_FACTORY_USER, FOREX_FACTORY_PASS).');
+        console.error('Forex Factory username or password not set in GitHub Secrets.');
         throw new Error('Missing login credentials.');
     }
 
@@ -63,19 +60,33 @@ async function takeScreenshot() {
         await page.goto(LOGIN_URL, { waitUntil: 'networkidle0', timeout: 60000 });
         console.log('Waiting for login form elements...');
         
-        // AANGEPAST: Geen visible: true meer
         await page.waitForSelector(USERNAME_SELECTOR, { timeout: 30000 });
         await page.waitForSelector(PASSWORD_SELECTOR, { timeout: 30000 });
         
+        // AANGEPAST: Zoek expliciet naar het ZICHTBARE username veld
         console.log('Typing username...');
-        await page.type(USERNAME_SELECTOR, FOREX_USER);
+        const userFields = await page.$$(USERNAME_SELECTOR);
+        for (const field of userFields) {
+            const isVisible = await field.evaluate(el => el.offsetWidth > 0 && el.offsetHeight > 0);
+            if (isVisible) {
+                await field.type(FOREX_USER);
+                break; // Stop met zoeken als we in de juiste hebben getypt
+            }
+        }
         await new Promise(resolve => setTimeout(resolve, 500));
         
+        // AANGEPAST: Zoek expliciet naar het ZICHTBARE wachtwoord veld
         console.log('Typing password...');
-        await page.type(PASSWORD_SELECTOR, FOREX_PASS);
+        const passFields = await page.$$(PASSWORD_SELECTOR);
+        for (const field of passFields) {
+            const isVisible = await field.evaluate(el => el.offsetWidth > 0 && el.offsetHeight > 0);
+            if (isVisible) {
+                await field.type(FOREX_PASS);
+                break;
+            }
+        }
         await new Promise(resolve => setTimeout(resolve, 500));
         
-        // AANGEPAST: Druk op Enter in plaats van klikken op een knop
         console.log('Pressing Enter to login...');
         await Promise.all([
             page.keyboard.press('Enter'),
@@ -83,21 +94,18 @@ async function takeScreenshot() {
         ]);
         
         console.log(`Landed on ${page.url()} after login click. Proceeding as if login was successful.`);
-        // --- EINDE LOGIN STAP (VEREENVOUDIGD) ---
+        // --- EINDE LOGIN STAP ---
 
-        console.log(`Navigating directly to calendar page (today view): ${CALENDAR_URL}...`);
+        console.log(`Navigating directly to calendar page: ${CALENDAR_URL}...`);
         await page.goto(CALENDAR_URL, { waitUntil: 'networkidle0', timeout: 90000 });
-        console.log(`Current URL is now: ${page.url()}`);
 
         console.log('Calendar page loaded. Waiting for calendar data to be present...');
         const calendarDataLoadedSelector = 'tr.calendar__row--new-day';
         try {
             await page.waitForSelector(calendarDataLoadedSelector, { timeout: 60000, visible: true });
-            console.log('Main calendar data (first day row) loaded.');
         } catch (error) {
-            console.error(`Timeout or error waiting for initial calendar data selector "${calendarDataLoadedSelector}" on page ${page.url()}. Original error: ${error.message}.`);
+            console.error(`Timeout or error waiting for calendar data. Original error: ${error.message}.`);
             await page.screenshot({ path: DEBUG_SCREENSHOT_PATH, fullPage: true });
-            console.log(`Debug screenshot (data not loaded) saved to ${DEBUG_SCREENSHOT_PATH}.`);
             throw error; 
         }
 
@@ -107,11 +115,10 @@ async function takeScreenshot() {
             await page.evaluate(() => {
                 const selectorsToRemove = [
                     '#header', '#footer_wrapper', 'div.calendar__control.left',
-                    '.calendar__options',
-                    '.calendar__status', 'div.calendar__more', 'div.calendar__timezone',
-                    '#adblock_whitelist_pitch', '.calendarsite__speedbump', '.ff-ad',
-                    'iframe[id^="google_ads_iframe"]', '.no-print', '.pagetitle',
-                    '.content_tabs', '#content > .sidebar'
+                    '.calendar__options', '.calendar__status', 'div.calendar__more', 
+                    'div.calendar__timezone', '#adblock_whitelist_pitch', 
+                    '.calendarsite__speedbump', '.ff-ad', 'iframe[id^="google_ads_iframe"]', 
+                    '.no-print', '.pagetitle', '.content_tabs', '#content > .sidebar'
                 ];
                 selectorsToRemove.forEach(selector => {
                     document.querySelectorAll(selector).forEach(el => el.remove());
@@ -128,13 +135,12 @@ async function takeScreenshot() {
                 }
                 window.scrollTo(0,0);
             });
-            console.log('Distracting elements REMOVED.');
             await new Promise(resolve => setTimeout(resolve, 2500));
         } catch (evalError) {
             console.warn('Could not remove all distracting elements:', evalError.message);
         }
         
-        // ***** BEGIN GEWIJZIGD SCREENSHOT BLOK *****
+        // ***** BEGIN SCREENSHOT BLOK *****
         console.log('Attempting to take final screenshot...');
         try {
             const calendarElementSelector = '#flexBox_flex_calendar_mainCal';
@@ -150,7 +156,6 @@ async function takeScreenshot() {
                     if ((clipX + clipWidth) > (boundingBox.x + boundingBox.width)) clipX = Math.max(0, Math.floor(boundingBox.x + boundingBox.width - clipWidth));
                     let clipHeight = Math.ceil(boundingBox.height);
                     
-                    console.log(`Attempting CLIPPED screenshot: x=${clipX}, y=${Math.floor(boundingBox.y)}, width=${clipWidth}, height=${clipHeight}`);
                     const requiredViewportWidth = clipX + clipWidth + 20;
                     const requiredViewportHeight = Math.floor(boundingBox.y) + clipHeight + 20;
                     const currentViewport = page.viewport();
@@ -159,26 +164,18 @@ async function takeScreenshot() {
                         await new Promise(resolve => setTimeout(resolve, 500));
                     }
                     await page.screenshot({ path: SCREENSHOT_PATH, clip: { x: clipX, y: Math.floor(boundingBox.y), width: clipWidth, height: clipHeight }});
-                    console.log(`Clipped element screenshot saved to ${SCREENSHOT_PATH}`);
                 } else {
-                    console.warn('Could not get valid bounding box for calendar element. Taking full page screenshot and saving as SCREENSHOT_PATH.');
                     await page.screenshot({ path: SCREENSHOT_PATH, fullPage: true }); 
-                    console.log(`Full page screenshot (due to bounding box issue) saved to ${SCREENSHOT_PATH}`);
                 }
             } else {
-                console.warn(`Calendar element "${calendarElementSelector}" not found. Taking full page screenshot of cleaned page and saving as SCREENSHOT_PATH.`);
                 await page.screenshot({ path: SCREENSHOT_PATH, fullPage: true }); 
-                console.log(`Full page screenshot (element not found) saved to ${SCREENSHOT_PATH}`);
             }
         } catch (screenshotError) {
-            console.error(`Error during final screenshot attempt: ${screenshotError.message}`);
             if (!fs.existsSync(SCREENSHOT_PATH) && page && !page.isClosed()) { 
                  await page.screenshot({ path: DEBUG_SCREENSHOT_PATH, fullPage: true }); 
-                 console.log(`Fallback debug screenshot (after error) saved to ${DEBUG_SCREENSHOT_PATH}`);
             }
             throw screenshotError;
         }
-        // ***** EINDE GEWIJZIGD SCREENSHOT BLOK *****
 
     } catch (error) {
         console.error('General error during screenshot process:', error.message);
@@ -187,69 +184,36 @@ async function takeScreenshot() {
             !fs.existsSync(LOGIN_FAILED_SCREENSHOT_PATH) &&
             !fs.existsSync(SCREENSHOT_PATH)) {
             try {
-                console.log(`Attempting to save general error screenshot to ${ERROR_SCREENSHOT_PATH}...`);
                 await page.screenshot({ path: ERROR_SCREENSHOT_PATH, fullPage: true });
-                console.log(`General error screenshot saved as ${ERROR_SCREENSHOT_PATH}`);
-            } catch (ssError) {
-                console.error(`FAILED to save general error screenshot ${ERROR_SCREENSHOT_PATH}. Screenshot error: ${ssError.message}`);
-            }
+            } catch (ssError) {}
         }
         throw error;
     } finally {
-        if (browser) {
-            await browser.close();
-            console.log('Browser closed.');
-        } else {
-            console.log('Browser was not launched or already closed in finally.');
-        }
+        if (browser) await browser.close();
     }
 }
 
 async function sendFileToDiscord(filePath, fileName, title) {
     const formData = new FormData();
-    formData.append('file1', fs.createReadStream(filePath), {
-        filename: fileName,
-        contentType: 'image/png',
-    });
-    formData.append('payload_json', JSON.stringify({
-        content: title
-    }));
+    formData.append('file1', fs.createReadStream(filePath), { filename: fileName, contentType: 'image/png' });
+    formData.append('payload_json', JSON.stringify({ content: title }));
 
     try {
-        const response = await axios.post(DISCORD_WEBHOOK_URL, formData, {
-            headers: formData.getHeaders(),
-        });
-        console.log(`Successfully sent ${fileName} to Discord:`, response.status);
+        await axios.post(DISCORD_WEBHOOK_URL, formData, { headers: formData.getHeaders() });
+        console.log(`Successfully sent ${fileName} to Discord.`);
     } catch (error) {
-        console.error(`Error sending ${fileName} to Discord:`);
-        if (error.response) {
-            console.error('Data:', error.response.data);
-            console.error('Status:', error.response.status);
-            console.error('Headers:', error.response.headers);
-        } else if (error.request) {
-            console.error('Request:', error.request);
-        } else {
-            console.error('Error Message:', error.message);
-        }
+        console.error(`Error sending to Discord:`, error.message);
     }
 }
 
 async function sendToDiscord() {
-    if (!DISCORD_WEBHOOK_URL) {
-        console.error('DISCORD_WEBHOOK_URL is not set.');
-        return;
-    }
+    if (!DISCORD_WEBHOOK_URL) return;
+    
     if (fs.existsSync(SCREENSHOT_PATH)) {
-        console.log(`Sending ${SCREENSHOT_PATH} to Discord...`);
         await sendFileToDiscord(SCREENSHOT_PATH, 'forex_calendar.png', `📅 **Forex Factory Calendar - ${new Date().toDateString()}**`);
-    } 
-    else if (fs.existsSync(DEBUG_SCREENSHOT_PATH)) { 
-        console.warn(`${SCREENSHOT_PATH} not found. Attempting to send ${DEBUG_SCREENSHOT_PATH} instead.`);
+    } else if (fs.existsSync(DEBUG_SCREENSHOT_PATH)) { 
         await sendFileToDiscord(DEBUG_SCREENSHOT_PATH, 'forex_calendar_debug.png', `⚠️ **DEBUG: Forex Factory Calendar - ${new Date().toDateString()}**`);
     } 
-    else {
-        console.warn(`Neither ${SCREENSHOT_PATH} nor ${DEBUG_SCREENSHOT_PATH} found. Not sending to Discord.`);
-    }
 }
 
 async function main() {
@@ -257,7 +221,6 @@ async function main() {
         await takeScreenshot();
         await sendToDiscord();
     } catch (error) {
-        console.error('Script failed in main:', error.message);
         process.exit(1);
     }
 }
