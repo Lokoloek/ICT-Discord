@@ -12,10 +12,10 @@ const CALENDAR_URL = 'https://www.forexfactory.com/calendar?day=today';
 const LOGIN_URL = 'https://www.forexfactory.com/login';
 const PROFILE_URL = 'https://www.forexfactory.com/lo3k'; // Jouw bevestigde profielpagina URL
 
-const USERNAME_SELECTOR = '#login_username';
-const PASSWORD_SELECTOR = '#login_password';
+// AANGEPAST: Gebruik de unieke 'name' attributen in plaats van ID
+const USERNAME_SELECTOR = 'input[name="vb_login_username"]';
+const PASSWORD_SELECTOR = 'input[name="vb_login_password"]';
 const LOGIN_BUTTON_SELECTOR = 'input[type="submit"].button';
-// const LOGIN_SUCCESS_SELECTOR = 'a.logout'; // Niet meer actief gebruikt voor verificatie
 
 const SCREENSHOT_PATH = 'forex_calendar.png';
 const DEBUG_SCREENSHOT_PATH = 'debug_screenshot.png'; // Nog steeds nuttig voor andere debugs
@@ -62,9 +62,12 @@ async function takeScreenshot() {
         console.log(`Navigating to login page: ${LOGIN_URL}`);
         await page.goto(LOGIN_URL, { waitUntil: 'networkidle0', timeout: 60000 });
         console.log('Waiting for login form elements...');
-        await page.waitForSelector(USERNAME_SELECTOR, { timeout: 30000, visible: true });
-        await page.waitForSelector(PASSWORD_SELECTOR, { timeout: 30000, visible: true });
-        await page.waitForSelector(LOGIN_BUTTON_SELECTOR, { timeout: 30000, visible: true });
+        
+        // AANGEPAST: visible: true weggehaald zodat Puppeteer niet blijft hangen als CSS de velden 'onzichtbaar' maakt
+        await page.waitForSelector(USERNAME_SELECTOR, { timeout: 30000 });
+        await page.waitForSelector(PASSWORD_SELECTOR, { timeout: 30000 });
+        await page.waitForSelector(LOGIN_BUTTON_SELECTOR, { timeout: 30000 });
+        
         console.log('Typing username...');
         await page.type(USERNAME_SELECTOR, FOREX_USER);
         await new Promise(resolve => setTimeout(resolve, 500));
@@ -91,10 +94,9 @@ async function takeScreenshot() {
             console.log('Main calendar data (first day row) loaded.');
         } catch (error) {
             console.error(`Timeout or error waiting for initial calendar data selector "${calendarDataLoadedSelector}" on page ${page.url()}. Original error: ${error.message}.`);
-            // Maak een debug screenshot als data niet laadt, maar sla op als DEBUG_SCREENSHOT_PATH
             await page.screenshot({ path: DEBUG_SCREENSHOT_PATH, fullPage: true });
             console.log(`Debug screenshot (data not loaded) saved to ${DEBUG_SCREENSHOT_PATH}.`);
-            throw error; // Gooi error zodat main catch het oppakt
+            throw error; 
         }
 
         // --- VERWIJDER STORENDE ELEMENTEN ---
@@ -115,10 +117,9 @@ async function takeScreenshot() {
                 document.body.style.padding = '0px';
                 document.body.style.margin = '0px';
                 document.body.style.background = 'white';
-                // document.body.style.overflow = 'hidden'; // Uitgecommentarieerd
                 const calendarContainer = document.getElementById('flexBox_flex_calendar_mainCal');
                 if (calendarContainer) {
-                    calendarContainer.style.margin = '0 auto'; // Centreer
+                    calendarContainer.style.margin = '0 auto'; 
                     calendarContainer.style.padding = '5px'; 
                     calendarContainer.style.border = 'none';
                     calendarContainer.style.boxShadow = 'none';
@@ -169,8 +170,8 @@ async function takeScreenshot() {
             }
         } catch (screenshotError) {
             console.error(`Error during final screenshot attempt: ${screenshotError.message}`);
-            if (!fs.existsSync(SCREENSHOT_PATH) && page && !page.isClosed()) { // Als SCREENSHOT_PATH nog niet bestaat
-                 await page.screenshot({ path: DEBUG_SCREENSHOT_PATH, fullPage: true }); // Maak dan een debug
+            if (!fs.existsSync(SCREENSHOT_PATH) && page && !page.isClosed()) { 
+                 await page.screenshot({ path: DEBUG_SCREENSHOT_PATH, fullPage: true }); 
                  console.log(`Fallback debug screenshot (after error) saved to ${DEBUG_SCREENSHOT_PATH}`);
             }
             throw screenshotError;
@@ -202,7 +203,6 @@ async function takeScreenshot() {
     }
 }
 
-// De sendToDiscord en main functies blijven hetzelfde
 async function sendFileToDiscord(filePath, fileName, title) {
     const formData = new FormData();
     formData.append('file1', fs.createReadStream(filePath), {
@@ -241,7 +241,7 @@ async function sendToDiscord() {
         console.log(`Sending ${SCREENSHOT_PATH} to Discord...`);
         await sendFileToDiscord(SCREENSHOT_PATH, 'forex_calendar.png', `📅 **Forex Factory Calendar - ${new Date().toDateString()}**`);
     } 
-    else if (fs.existsSync(DEBUG_SCREENSHOT_PATH)) { // Fallback naar debug screenshot als hoofdscreenshot mist
+    else if (fs.existsSync(DEBUG_SCREENSHOT_PATH)) { 
         console.warn(`${SCREENSHOT_PATH} not found. Attempting to send ${DEBUG_SCREENSHOT_PATH} instead.`);
         await sendFileToDiscord(DEBUG_SCREENSHOT_PATH, 'forex_calendar_debug.png', `⚠️ **DEBUG: Forex Factory Calendar - ${new Date().toDateString()}**`);
     } 
